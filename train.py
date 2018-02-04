@@ -20,7 +20,7 @@ from unet import *
 
 
 # Hyper params
-num_epochs = 100
+num_epochs = 1000
 batch_size = 4
 
 # global vars
