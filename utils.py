@@ -2,7 +2,6 @@
 # Nov. 19, 2017
 # edited, Feb. 3, 2018
 
-# reference: http://pytorch.org/tutorials/beginner/data_loading_tutorial.html
 
 from __future__ import print_function, division
 import os
@@ -25,7 +24,7 @@ warnings.filterwarnings("ignore")
 
 plt.ion()   # interactive mode
 
-
+# reference: http://pytorch.org/tutorials/beginner/data_loading_tutorial.html
 class img_dataset():
     """vaihingen image semantic labeling dataset."""
 
@@ -68,6 +67,34 @@ def show_imgs(image, labels):
 
 def to_np(x):
     return x.data.cpu().numpy()
+
+
+
+
+
+
+
+
+
+"""
+Six categories/classes have been defined:
+
+Impervious surfaces (RGB: 255, 255, 255)
+Building (RGB: 0, 0, 255)
+Low vegetation (RGB: 0, 255, 255)
+Tree (RGB: 0, 255, 0)
+Car (RGB: 255, 255, 0)
+Clutter/background (RGB: 255, 0, 0)
+"""
+def RGB2label(rgb):
+
+    return label
+
+
+
+
+
+
 
 '''data to tensor, and save tensor'''
 
