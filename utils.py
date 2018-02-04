@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 from skimage import io, transform
-import image_slicer
+#import image_slicer
 
 import torch
 from torch.utils.data import Dataset, DataLoader

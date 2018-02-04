@@ -13,6 +13,7 @@ import pandas as pd
 from tqdm import *
 import sys
 import math
+import argparse
 from distutils.version import LooseVersion
 
 from utils import *
@@ -24,6 +25,8 @@ num_epochs = 1000
 batch_size = 4
 
 # global vars
+#parser = argparse.ArgumentParser(description='Short sample app')
+#parser.add_argument('-d', action="debug_mode", dest='debug',default=False)
 debug = False
 #debug = True
 if(torch.cuda.is_available()):
