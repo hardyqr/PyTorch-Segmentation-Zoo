@@ -21,7 +21,7 @@ def double_conv(in_ch,out_ch):
 
 
 class inconv(nn.Module):
-    def __inti__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch):
         super(inconv,self).__init__()
         self.conv = double_conv(in_ch,out_ch)
     def forward(self, x):
@@ -29,7 +29,7 @@ class inconv(nn.Module):
         return x
 
 class down_block(nn.Module):
-    def __inti__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch):
         super(down_block,self).__init__()
         self.maxpool = nn.MaxPool2d(2)
         self.conv = double_conv(in_ch,out_ch)
@@ -40,9 +40,10 @@ class down_block(nn.Module):
 
 
 class up_block(nn.Module):
-    def __inti__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch):
         super(up_block,self).__init__()
-        self.up = nn.ConvTranspose2d(in_ch,out_ch,2,stride=2)
+        #self.up = nn.ConvTranspose2d(in_ch,in_ch,2,stride=2)
+        self.up = nn.Upsample(scale_factor=2)
         self.conv = double_conv(in_ch,out_ch)
         
     def forward(self, x1, x2):
@@ -53,12 +54,13 @@ class up_block(nn.Module):
         x = self.up(x1) # upconv, nxn->2nx2n, ch_x->ch_x/2
         #x2_cropped = F.pad(x2, )
         x2_cropped = x2
+        #print(x.size(), x2.size())
         x = torch.cat([x,x2_cropped],dim=1) # concat the channel dimension
         x = self.conv(x) # double conv
         return x
 
 class outconv(nn.Module):
-    def __inti__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch):
         super(outconv,self).__init__()
         self.conv = nn.Conv2d(in_ch,out_ch,1) # 1x1 conv
     def forward(self, x):

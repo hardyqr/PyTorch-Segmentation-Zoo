@@ -6,6 +6,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
+import numpy as np
 
 from unet_layers import *
 
@@ -29,13 +31,27 @@ class Unet(nn.Module):
         x2 = self.down1(x1)
         x3 = self.down2(x2)
         x4 = self.down3(x3)
-        print(x4.shape)
+        #print(x4.shape)
         x5 = self.down4(x4)
-        print(x5.shape)
+        #print("before up1: ", x5.shape)
         x = self.up1(x5, x4)
+        #print("after up1, before up2: ",x.shape)
         x = self.up2(x, x3)
+        #print(x.shape)
         x = self.up3(x, x2)
         x = self.up4(x, x1)
+        #print(x.shape)
         x = self.outc(x)
+        #print(x.shape)
         return x
 
+
+if __name__ == "__main__":
+    """
+    testing
+    """
+    model = Unet(3,1)
+    x = Variable(torch.FloatTensor(np.random.random((1, 3, 500, 500))))
+    out = model(x)
+    loss = torch.sum(out)
+    loss.backward()
