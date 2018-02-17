@@ -21,47 +21,52 @@ from unet import *
 
 
 # Hyper params
-num_epochs = 1000
-batch_size = 4
+num_epochs = 2000
+batch_size = 3
+learning_rate = 1e-5
 
 # global vars
 #parser = argparse.ArgumentParser(description='Short sample app')
 #parser.add_argument('-d', action="debug_mode", dest='debug',default=False)
 debug = False
 #debug = True
+load_prev = False
 if(torch.cuda.is_available()):
     use_gpu = True
 
 
 # Handle data
-train_set =img_dataset(sys.argv[1],sys.argv[2],
+train_set =img_dataset_train(sys.argv[1],sys.argv[2],
         transform=transforms.Compose([
             transforms.Resize((512,512)),
             transforms.ToTensor()]))
 
 # Handle data
-test_set =img_dataset(sys.argv[1],sys.argv[2],
+test_set =img_dataset_test(sys.argv[1],sys.argv[2],
         transform=transforms.Compose([
             transforms.Resize((512,512)),
             transforms.ToTensor()]))
 
 train_loader = torch.utils.data.DataLoader(
         train_set,
-        batch_size=4, shuffle=True)
+        batch_size=batch_size, shuffle=True)
 
 test_loader = torch.utils.data.DataLoader(
         test_set,
-        batch_size=1, shuffle=True)
-# 
+        batch_size=1, shuffle=False)
 
 
-unet = Unet(3,3)
+
+unet = Unet(3,6)
+
+if(load_prev):
+    unet.load_state_dict(torch.load('prev_model.pkl'))
 
 if(use_gpu):
     unet.cuda()
 
-criterion = nn.MSELoss() 
-optimizer = torch.optim.Adam(unet.parameters(), lr=1e-3)
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(unet.parameters(), lr=learning_rate)
 
 
 
@@ -77,24 +82,24 @@ for epoch in range(num_epochs):
         counter+=1
         #print(counter)
         images = Variable(image)
-        labels = Variable(label.float())
+        labels = Variable(label)
 
-        test = to_np(labels)[0].transpose((1,2,0))
-        #print(test.shape)
+
         #print(test*255)
         #test = Image.fromarray(np.uint8(test*255))
         #test.show()
         #print(to_np(labels))
 
+        labels = rgb2onehot(labels)
         if(use_gpu):
             images = images.cuda()
             labels = labels.cuda()
-        #print(images.size(), labels.size())
 
         # Forward + Backward + Optimize
         optimizer.zero_grad()
         outputs = unet(images)
         #print(outputs.size(), labels.size())
+        #target = labels.view(-1, )
         #print(outputs)
         #print(labels)
         loss = criterion(outputs, labels)
@@ -103,17 +108,26 @@ for epoch in range(num_epochs):
 
 
         if (i+1) % 1 == 0:
-            print ('Epoch [%d/%d], Batch [%d/%d] Loss: %.4f'
+            print ('Epoch [%d/%d], Batch [%d/%d] Loss: %.6f'
                    %(epoch+1, num_epochs,i+1, len(train_loader),loss.data[0]))
 
+    if(epoch == 0 or epoch % 20 != 0):
+        continue
+    ''' test '''
 
-''' test '''
+    for i,(image, label, (w,h)) in enumerate(tqdm(test_loader)):
+        image = Variable(image).cuda()
+        img = unet(image)
+        img = onehot2rgb(img)
+        img = np.uint8(img[0]*255)
+        img = Image.fromarray(img, 'RGB')
+        img = img.resize((w.numpy(),h.numpy()))
+        #img.show()
+        img.save('./outputs/test' + str(epoch) + '_' + str(i)+ '.png')
+        
+    # save Model
+    if (not debug):
+        torch.save(unet.state_dict(),'prev_model.pkl')
 
-for i, (image, label) in enumerate(test_loader):
-    image = Variable(image).cuda()
-    img = unet(image)
-    img = np.uint8(to_np(img)[0].transpose((1,2,0))*255)
-    print(img.shape)
-    img = Image.fromarray(img, 'RGB')
-    #img.show()
-    img.save('./outputs/test' + str(i)+ '.png')
+
+

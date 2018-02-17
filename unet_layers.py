@@ -51,10 +51,9 @@ class up_block(nn.Module):
         x1: from last layer
         x2: from down conv process
         '''
-        x = self.up(x1) # upconv, nxn->2nx2n, ch_x->ch_x/2
+        x = self.up(x1) # upconv, nxn->2nx2n
         #x2_cropped = F.pad(x2, )
         x2_cropped = x2
-        #print(x.size(), x2.size())
         x = torch.cat([x,x2_cropped],dim=1) # concat the channel dimension
         x = self.conv(x) # double conv
         return x
