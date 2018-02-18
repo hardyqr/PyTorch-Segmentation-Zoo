@@ -227,12 +227,14 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     i = np.array(PIL.Image.open('gts.png'))
     i = i[:,:,0:3]
-    PIL.Image.fromarray(i,'RGB').show()
+    #PIL.Image.fromarray(i,'RGB').show()
     i = i.transpose((2,0,1))
     ii = np.array([ np.array(i)/255 ])
     i = to_var(torch.from_numpy(ii)) # PngImageFile to torch Variable
     t = rgb2onehot(i)
 
     tt = np.array(onehot2rgb(t)[0])
-    PIL.Image.fromarray((tt*255).astype('uint8')).show()
+    p = PIL.Image.fromarray((tt*255).astype('uint8'))
+    # p.show()
+    p.save('sample.png')
 
