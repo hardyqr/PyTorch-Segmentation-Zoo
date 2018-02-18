@@ -27,7 +27,6 @@ warnings.filterwarnings("ignore")
 
 plt.ion()   # interactive mode
 
-
 # reference: http://pytorch.org/tutorials/beginner/data_loading_tutorial.html
 class img_dataset_train():
     """vaihingen image semantic labeling dataset."""
@@ -103,8 +102,6 @@ class img_dataset_test():
         return image, label, (original_image.size[0],original_image.size[1])
 
 
-
-
 def show_imgs(image, labels):
     """Show image with landmarks"""
     plt.imshow(image)
@@ -153,16 +150,65 @@ def random_crop(PIL_img,label,ratio):
 def to_np(x):
     return x.data.cpu().numpy()
 
-def to_var(c):
+def to_var(x):
     if torch.cuda.is_available():
         x = x.cuda()
     return Variable(x)
 
+def rgb2onehot(labels):
+    """
+    Args:
+        labels: A torch Variable.
+    Outputs:
+        A torch Variavle.
+    """
+    labels = to_np(labels).transpose((0,2,3,1))
+    s = labels.shape
+    onehot_labels = np.zeros((s[0],s[1],s[2],6))
+    l1,l2,l3,l4,l5,l6 = np.zeros(s),np.zeros(s),np.zeros(s),np.zeros(s),np.zeros(s),np.zeros(s)
+    l1 += np.array([1,1,1]) # impervious surface
+    l2 += np.array([0,0,1]) # building
+    l3 += np.array([0,1,1]) # low vegetation
+    l4 += np.array([0,1,0]) # tree
+    l5 += np.array([1,1,0]) # car
+    l6 += np.array([1,0,0]) # clutter
+    mask1 = np.sum((labels == l1).astype(np.float32), axis=-1)==3
+    mask2 = np.sum((labels == l2).astype(np.float32), axis=-1)==3
+    mask3 = np.sum((labels == l3).astype(np.float32), axis=-1)==3
+    mask4 = np.sum((labels == l4).astype(np.float32), axis=-1)==3
+    mask5 = np.sum((labels == l5).astype(np.float32), axis=-1)==3
+    mask6 = np.sum((labels == l6).astype(np.float32), axis=-1)==3
+    ll1,ll2,ll3,ll4,ll5,ll6 = np.zeros(6),np.zeros(6),np.zeros(6),np.zeros(6),np.zeros(6),np.zeros(6)
+    ll1[0], ll2[1], ll3[2], ll4[3], ll5[4], ll6[5] = 1., 1., 1., 1., 1., 1.
+    onehot_labels[mask1] = ll1
+    onehot_labels[mask2] = ll2
+    onehot_labels[mask3] = ll3
+    onehot_labels[mask4] = ll4
+    onehot_labels[mask5] = ll5
+    onehot_labels[mask6] = ll6
+    return Variable(torch.from_numpy(onehot_labels.transpose((0,3,1,2))).float())
+
+def onehot2rgb(predict):
+    """
+    Args:
+        predict: A torch Variable.
+    Outputs:
+        A numpy array.
+    """
+    predict =  to_np(predict).transpose([0,2,3,1])
+    s = predict.shape
+    label = np.argmax(predict, axis=-1)
+    rgb =  np.zeros((s[0],s[1],s[2],3))
+    rgb[ label[:,:,:] == 0. ] = np.array([1,1,1])
+    rgb[ label[:,:,:] == 1. ] = np.array([0,0,1])
+    rgb[ label[:,:,:] == 2. ] = np.array([0,1,1])
+    rgb[ label[:,:,:] == 3. ] = np.array([0,1,0])
+    rgb[ label[:,:,:] == 4. ] = np.array([1,1,0])
+    rgb[ label[:,:,:] == 5. ] = np.array([1,0,0])
+    return rgb
 
 
-
-'''data to tensor, and save tensor'''
-
+'''
 if __name__ == "__main__":
     transformed_dataset = img_dataset(
         sys.argv[1],
@@ -177,50 +223,16 @@ if __name__ == "__main__":
         if i == 3:
             break
 
+'''
+if __name__ == "__main__":
+    i = np.array(PIL.Image.open('gts.png'))
+    i = i[:,:,0:3]
+    PIL.Image.fromarray(i,'RGB').show()
+    i = i.transpose((2,0,1))
+    ii = np.array([ np.array(i)/255 ])
+    i = to_var(torch.from_numpy(ii)) # PngImageFile to torch Variable
+    t = rgb2onehot(i)
 
-def rgb2onehot(labels):
-    labels = to_np(labels).transpose([0,2,3,1])
-    s = labels.shape
-    onehot_labels = np.zeros((s[0],s[1],s[2],6))
-    l1=l2=l3=l4=l5=l6 = np.zeros(s)
-    l1[:,:,:] = np.array([1,1,1]) # impervious surface
-    l2[:,:,:] = np.array([0,0,1]) # building
-    l3[:,:,:] = np.array([0,1,1]) # low vegetation
-    l4[:,:,:] = np.array([0,1,0]) # tree
-    l5[:,:,:] = np.array([1,1,0]) # car
-    l6[:,:,:] = np.array([1,0,0]) # clutter
-    mask1 = np.sum((labels == l1).astype(np.float32), axis=-1)==3
-    mask2 = np.sum((labels == l2).astype(np.float32), axis=-1)==3
-    mask3 = np.sum((labels == l3).astype(np.float32), axis=-1)==3
-    mask4 = np.sum((labels == l4).astype(np.float32), axis=-1)==3
-    mask5 = np.sum((labels == l5).astype(np.float32), axis=-1)==3
-    mask6 = np.sum((labels == l6).astype(np.float32), axis=-1)==3
-    ll1=ll2=ll3=ll4=ll5=ll6 = np.zeros(6)
-    ll1[0] = 1
-    ll2[1] = 1
-    ll3[2] = 1
-    ll4[3] = 1
-    ll5[4] = 1
-    ll6[5] = 1
-    onehot_labels[mask1] = ll1
-    onehot_labels[mask2] = ll2
-    onehot_labels[mask3] = ll3
-    onehot_labels[mask4] = ll4
-    onehot_labels[mask5] = ll5
-    onehot_labels[mask6] = ll6
-    return Variable(torch.from_numpy(onehot_labels.transpose([0,3,1,2])).float())
-
-def onehot2rgb(predict):
-    predict =  to_np(predict).transpose([0,2,3,1])
-    s = predict.shape
-    label = np.argmax(predict, axis=-1)
-    rgb =  np.zeros((s[0],s[1],s[2],3))
-    rgb[ label[:,:,:] == 0 ] = np.array([1,1,1])
-    rgb[ label[:,:,:] == 1 ] = np.array([0,0,1])
-    rgb[ label[:,:,:] == 2 ] = np.array([0,1,1])
-    rgb[ label[:,:,:] == 3 ] = np.array([0,1,0])
-    rgb[ label[:,:,:] == 4 ] = np.array([1,1,0])
-    rgb[ label[:,:,:] == 5 ] = np.array([1,0,0])
-
-    return rgb
+    tt = np.array(onehot2rgb(t)[0])
+    PIL.Image.fromarray((tt*255).astype('uint8')).show()
 
