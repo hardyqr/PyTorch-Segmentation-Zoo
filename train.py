@@ -30,19 +30,23 @@ learning_rate = 1e-5
 #parser.add_argument('-d', action="debug_mode", dest='debug',default=False)
 debug = False
 #debug = True
-load_prev = False
+load_prev = True
 if(torch.cuda.is_available()):
     use_gpu = True
 
 
 # Handle data
-train_set =img_dataset_train(sys.argv[1],sys.argv[2],
+train_set =img_dataset_train(sys.argv[2],sys.argv[1],
         transform=transforms.Compose([
             transforms.Resize((512,512)),
             transforms.ToTensor()]))
 
-# Handle data
-test_set =img_dataset_test(sys.argv[1],sys.argv[2],
+val_set =img_dataset_val(sys.argv[2],sys.argv[1],
+        transform=transforms.Compose([
+            transforms.Resize((512,512)),
+            transforms.ToTensor()]))
+
+test_set =img_dataset_test(sys.argv[3],
         transform=transforms.Compose([
             transforms.Resize((512,512)),
             transforms.ToTensor()]))
@@ -51,12 +55,13 @@ train_loader = torch.utils.data.DataLoader(
         train_set,
         batch_size=batch_size, shuffle=True)
 
+val_loader = torch.utils.data.DataLoader(
+        val_set,
+        batch_size=1, shuffle=False)
+
 test_loader = torch.utils.data.DataLoader(
         test_set,
         batch_size=1, shuffle=False)
-
-
-
 unet = Unet(3,6)
 
 if(load_prev):
@@ -115,7 +120,7 @@ for epoch in range(num_epochs):
         continue
     ''' test '''
 
-    for i,(image, label, (w,h)) in enumerate(tqdm(test_loader)):
+    for i,(image, label, (w,h)) in enumerate(tqdm(val_loader)):
         image = Variable(image).cuda()
         img = unet(image)
         img = onehot2rgb(img)
@@ -123,8 +128,18 @@ for epoch in range(num_epochs):
         img = Image.fromarray(img, 'RGB')
         img = img.resize((w.numpy(),h.numpy()))
         #img.show()
-        img.save('./outputs/test' + str(epoch) + '_' + str(i)+ '.png')
-        
+        img.save('./outputs/val_' + str(epoch) + '_' + str(i)+ '.png')
+       
+    for i,(image,(w,h)) in enumerate(tqdm(test_loader)):
+        image = Variable(image).cuda()
+        img = unet(image)
+        img = onehot2rgb(img)
+        img = np.uint8(img[0]*255)
+        img = Image.fromarray(img, 'RGB')
+        img = img.resize((w.numpy(),h.numpy()))
+        #img.show()
+        img.save('./outputs/test_' + str(epoch) + '_' + str(i)+ '.png')
+
     # save Model
     if (not debug):
         torch.save(unet.state_dict(),'prev_model.pkl')

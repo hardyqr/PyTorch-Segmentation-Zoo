@@ -67,7 +67,7 @@ class img_dataset_train():
         #print(label.size())
         return image, label
 
-class img_dataset_test():
+class img_dataset_val():
     """vaihingen image semantic labeling dataset."""
 
     def __init__(self, mask_dir, img_dir, transform=None):
@@ -101,6 +101,31 @@ class img_dataset_test():
         #print(label.size())
         return image, label, (original_image.size[0],original_image.size[1])
 
+class img_dataset_test():
+    """vaihingen image semantic labeling dataset."""
+
+    def __init__(self, img_dir, transform=None):
+        """
+        Args:
+            img_dir (string): Path with all the training images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.img_dir = img_dir
+        self.transform = transform
+        names = os.listdir(img_dir)
+        names.sort()
+        self.names = names
+
+    def __len__(self):
+        return len(self.names)
+
+    def __getitem__(self, idx):
+        #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
+        original_image = Image.open(self.img_dir+'/'+self.names[idx])
+        if self.transform:
+            image = self.transform(original_image)
+        return image, (original_image.size[0],original_image.size[1])
 
 def show_imgs(image, labels):
     """Show image with landmarks"""
@@ -227,6 +252,8 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     i = np.array(PIL.Image.open('gts.png'))
     i = i[:,:,0:3]
+    i[ i[:,:,:] >= 128 ] = 255
+    i[ i[:,:,:] < 128 ] = 0
     #PIL.Image.fromarray(i,'RGB').show()
     i = i.transpose((2,0,1))
     ii = np.array([ np.array(i)/255 ])
