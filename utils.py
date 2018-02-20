@@ -12,6 +12,7 @@ import numpy as np
 from numpy import random
 from PIL import Image
 import PIL
+from osgeo import gdal
 import matplotlib.pyplot as plt
 from skimage import io, transform
 #import image_slicer
@@ -31,7 +32,7 @@ plt.ion()   # interactive mode
 class img_dataset_train():
     """vaihingen image semantic labeling dataset."""
 
-    def __init__(self, mask_dir, img_dir, transform=None):
+    def __init__(self,  img_dir,mask_dir, transform=None):
         """
         Args:
             mask_dir (string): Path to (img) annotations.
@@ -53,24 +54,27 @@ class img_dataset_train():
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
         image = Image.open(self.img_dir+'/'+self.names[idx])
         label = Image.open(self.mask_dir+'/'+self.names[idx])
-        # data augmentation
-        image,label = augmentation_tool(image, label)
-        #image.save(str(idx)+'1.png')
-        #label.save(str(idx)+'2.png')
+        
+        #image = gdal.Open(self.img_dir+'/'+self.names[idx])
+        #label = gdal.Open(self.mask_dir+'/'+self.names[idx])
+        # gdal.Dataset to ndarray
+        #image, label = image.ReadAsArray(), label.ReadAsArray()
+        # ndarray to PIL
+        #image = Image.fromarray(image.transpose((1,2,0)))
+        #label = Image.fromarray(label.transpose((1,2,0)))
+
         if self.transform:
             image = self.transform(image)
             label = self.transform(label)
         # avoid inaccurate rgb labels
         label[ label[:,:,:] >= 0.5] = 1  
         label[ label[:,:,:] < 0.5] = 0
-        #Image.fromarray((onehot2rgb(rgb2onehot2(label))*255)).save('./test.png')
-        #print(label.size())
         return image, label
 
 class img_dataset_val():
     """vaihingen image semantic labeling dataset."""
 
-    def __init__(self, mask_dir, img_dir, transform=None):
+    def __init__(self, img_dir,mask_dir,  transform=None):
         """
         Args:
             mask_dir (string): Path to (img) annotations.
@@ -92,6 +96,14 @@ class img_dataset_val():
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
         original_image = Image.open(self.img_dir+'/'+self.names[idx])
         label = Image.open(self.mask_dir+'/'+self.names[idx])
+        
+        #original_image = gdal.Open(self.img_dir+'/'+self.names[idx])
+        #label = gdal.Open(self.mask_dir+'/'+self.names[idx])
+        # gdal.Dataset to ndarray
+        #image, label = image.ReadAsArray(), label.ReadAsArray()
+        # ndarray to PIL
+        #image, label = Image.fromarray(image.transpose((1,2,0))),Image.fromarray(label.transpose((1,2,0)))
+        name = self.names[idx]
 
         if self.transform:
             image = self.transform(original_image)
@@ -99,7 +111,7 @@ class img_dataset_val():
         label[ label[:,:,:] >= 0.5] = 1
         label[ label[:,:,:] < 0.5] = 0
         #print(label.size())
-        return image, label, (original_image.size[0],original_image.size[1])
+        return image, label, name, (original_image.size[0],original_image.size[1])
 
 class img_dataset_test():
     """vaihingen image semantic labeling dataset."""
@@ -123,6 +135,13 @@ class img_dataset_test():
     def __getitem__(self, idx):
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
         original_image = Image.open(self.img_dir+'/'+self.names[idx])
+        
+        #original_image = gdal.Open(self.img_dir+'/'+self.names[idx])
+        # gdal.Dataset to ndarray
+        #image = image.ReadAsArray()
+        # ndarray to PIL
+        #image = Image.fromarray(image.transpose((1,2,0)))
+
         if self.transform:
             image = self.transform(original_image)
         return image, (original_image.size[0],original_image.size[1])
@@ -134,11 +153,7 @@ def show_imgs(image, labels):
     plt.pause(2)  # pause a bit so that plots are updated
 
 
-def augmentation_tool(image, label):
-    # data augmentation - random crop
-    if(random.randint(0,2) == 0):# 2/3 keep
-        image,label = random_crop(image,label,0.8)
-    # data augmentation - affine transformation
+def random_transpose(image, label):
     methods = [PIL.Image.FLIP_LEFT_RIGHT,
                     PIL.Image.FLIP_TOP_BOTTOM,
                     PIL.Image.ROTATE_90,
@@ -171,6 +186,23 @@ def random_crop(PIL_img,label,ratio):
                 new_center[0] + ratio*height/2
                 )
     return PIL_img.crop(cropped_area), label.crop(cropped_area)
+
+def random_rotate(PIL_img, label, _range):
+    (width, height) = PIL_img.size
+    angle = np.random.randint(-_range,_range)
+    ratio = 0.7
+    img = PIL_img.rotate(angle)
+    label = label.rotate(angle)
+    center = (int(height/2),int(width/2))
+    cropped_area = (
+                center[1] - ratio*width/2,
+                center[0] - ratio*height/2,
+                center[1] + ratio*width/2,
+                center[0] + ratio*height/2
+                )   
+    return img.crop(cropped_area), label.crop(cropped_area)
+
+
 
 def to_np(x):
     return x.data.cpu().numpy()
@@ -231,6 +263,33 @@ def onehot2rgb(predict):
     rgb[ label[:,:,:] == 4. ] = np.array([1,1,0])
     rgb[ label[:,:,:] == 5. ] = np.array([1,0,0])
     return rgb
+
+# Dice Loss - a loss for multi-class segmentation task
+# https://github.com/pytorch/pytorch/issues/1249
+def dice_loss(input, target):
+    smooth = 1.
+
+    iflat = input.view(-1)
+    tflat = target.view(-1)
+    intersection = (iflat * tflat).sum()
+    
+    return 1 - ((2. * intersection + smooth) /
+              (iflat.sum() + tflat.sum() + smooth))
+
+
+def simple_acc(input, target):
+    """
+    Args:
+        input: numpy matrix of prediction in rgb format.
+        target: ground truth matrx in one-hot format.
+    """
+    input = rgb2onehot(Variable(torch.from_numpy(input.transpose((0,3,1,2)))))
+    iflat = input.view(-1)
+    tflat = target.view(-1)
+    intersection = (iflat * tflat).sum()
+    allpixels = tflat.sum()
+    return float(intersection / allpixels)
+
 
 
 '''

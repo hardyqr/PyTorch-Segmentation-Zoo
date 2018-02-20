@@ -21,32 +21,32 @@ from unet import *
 
 
 # Hyper params
-num_epochs = 2000
+num_epochs = 100
 batch_size = 3
-learning_rate = 1e-5
+learning_rate = 1e-4
 
 # global vars
 #parser = argparse.ArgumentParser(description='Short sample app')
 #parser.add_argument('-d', action="debug_mode", dest='debug',default=False)
 debug = False
 #debug = True
-load_prev = True
+load_prev = False
 if(torch.cuda.is_available()):
     use_gpu = True
 
 
 # Handle data
-train_set =img_dataset_train(sys.argv[2],sys.argv[1],
+train_set =img_dataset_train(sys.argv[1],sys.argv[2],
         transform=transforms.Compose([
             transforms.Resize((512,512)),
             transforms.ToTensor()]))
 
-val_set =img_dataset_val(sys.argv[2],sys.argv[1],
+val_set =img_dataset_val(sys.argv[3],sys.argv[4],
         transform=transforms.Compose([
             transforms.Resize((512,512)),
             transforms.ToTensor()]))
 
-test_set =img_dataset_test(sys.argv[3],
+test_set =img_dataset_test(sys.argv[5],
         transform=transforms.Compose([
             transforms.Resize((512,512)),
             transforms.ToTensor()]))
@@ -73,15 +73,19 @@ if(use_gpu):
 criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(unet.parameters(), lr=learning_rate)
 
-
-
 counter = 0
 
 print("len(train_loader) :" ,len(train_loader))
 # Train the Model
 for epoch in range(num_epochs):
-    if(debug and counter>=3):
-        break
+    #if(debug and counter>=3): break
+    if (epoch == 20):
+        optimizer = torch.optim.Adam(unet.parameters(), lr=learning_rate/10)
+    elif (epoch == 40):
+        optimizer = torch.optim.Adam(unet.parameters(), lr=learning_rate/20)
+    elif (epoch == 70):
+        optimizer = torch.optim.Adam(unet.parameters(), lr=learning_rate/100)
+
     for i,(image,label) in enumerate(train_loader):
         if(debug and counter>=3):break
         counter+=1
@@ -108,37 +112,53 @@ for epoch in range(num_epochs):
         #print(outputs)
         #print(labels)
         loss = criterion(outputs, labels)
+        #loss = dice_loss(outputs, labels)
         loss.backward()
         optimizer.step()
 
 
-        if (i+1) % 1 == 0:
+        if (i+1) % 100 == 0:
             print ('Epoch [%d/%d], Batch [%d/%d] Loss: %.6f'
                    %(epoch+1, num_epochs,i+1, len(train_loader),loss.data[0]))
 
-    if(epoch == 0 or epoch % 20 != 0):
-        continue
-    ''' test '''
+    #if(epoch == 0 or epoch % 20 != 0):
+    #    continue
 
-    for i,(image, label, (w,h)) in enumerate(tqdm(val_loader)):
+    ''' val '''
+    print('Validation: ')
+    accs = []
+    for i,(image, label, name, (w,h)) in enumerate(val_loader):
         image = Variable(image).cuda()
         img = unet(image)
         img = onehot2rgb(img)
+        
+        # acc 
+        label = rgb2onehot(Variable(label))
+        acc = simple_acc(img,label)# Truth_Positive / NumberOfPixels
+        accs.append(acc)
+        print('%s acc: %.2f%%' % (str(name[0]), 100*acc))
+
         img = np.uint8(img[0]*255)
         img = Image.fromarray(img, 'RGB')
         img = img.resize((w.numpy(),h.numpy()))
         #img.show()
-        img.save('./outputs/val_' + str(epoch) + '_' + str(i)+ '.png')
+        #img.save(sys.argv[6] + '/val_' + str(epoch) + '_' + str(i)+ '.png')
+    print('Overall acc- all pics: %.2f%%' % (100*sum(accs)/float(len(accs)) ))
        
+    ''' test '''
+    print('running test set... ')
     for i,(image,(w,h)) in enumerate(tqdm(test_loader)):
         image = Variable(image).cuda()
         img = unet(image)
+        #acc = simple_acc(outputs,labels)# Truth_Positive / NumberOfPixels
+        #print(acc)
         img = onehot2rgb(img)
         img = np.uint8(img[0]*255)
         img = Image.fromarray(img, 'RGB')
         img = img.resize((w.numpy(),h.numpy()))
         #img.show()
-        img.save('./outputs/test_' + str(epoch) + '_' + str(i)+ '.png')
+
+        img.save(sys.argv[6] + '/test_' + str(epoch) + '_' + str(i)+ '.png')
 
     # save Model
     if (not debug):
