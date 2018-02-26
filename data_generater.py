@@ -15,8 +15,8 @@ label_out_folder = sys.argv[4]
 
 
 if __name__ == '__main__':
-    count = 600
-    for i in tqdm(range(50,300)):
+    count = 4701
+    for i in tqdm(range(0,200)):
         for f in names:
             #print(f)
             count += 1

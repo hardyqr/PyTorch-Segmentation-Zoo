@@ -21,7 +21,7 @@ from unet import *
 
 
 # Hyper params
-num_epochs = 100
+num_epochs = 30
 batch_size = 3
 learning_rate = 1e-4
 
@@ -30,6 +30,7 @@ learning_rate = 1e-4
 #parser.add_argument('-d', action="debug_mode", dest='debug',default=False)
 debug = False
 #debug = True
+load_prev = True
 load_prev = False
 if(torch.cuda.is_available()):
     use_gpu = True
@@ -79,11 +80,11 @@ print("len(train_loader) :" ,len(train_loader))
 # Train the Model
 for epoch in range(num_epochs):
     #if(debug and counter>=3): break
-    if (epoch == 20):
+    if (epoch == 5):
         optimizer = torch.optim.Adam(unet.parameters(), lr=learning_rate/10)
-    elif (epoch == 40):
+    elif (epoch == 10):
         optimizer = torch.optim.Adam(unet.parameters(), lr=learning_rate/20)
-    elif (epoch == 70):
+    elif (epoch == 20):
         optimizer = torch.optim.Adam(unet.parameters(), lr=learning_rate/100)
 
     for i,(image,label) in enumerate(train_loader):
@@ -142,7 +143,7 @@ for epoch in range(num_epochs):
         img = Image.fromarray(img, 'RGB')
         img = img.resize((w.numpy(),h.numpy()))
         #img.show()
-        #img.save(sys.argv[6] + '/val_' + str(epoch) + '_' + str(i)+ '.png')
+        img.save(sys.argv[6] + '/val_' + str(epoch) + '_' + str(i)+ '.png')
     print('Overall acc- all pics: %.2f%%' % (100*sum(accs)/float(len(accs)) ))
        
     ''' test '''

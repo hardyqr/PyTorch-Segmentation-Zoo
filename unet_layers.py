@@ -6,7 +6,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from utils import to_np 
 
 def double_conv(in_ch,out_ch):
     conv_seq = nn.Sequential(
@@ -42,7 +42,7 @@ class down_block(nn.Module):
 class up_block(nn.Module):
     def __init__(self, in_ch, out_ch):
         super(up_block,self).__init__()
-        #self.up = nn.ConvTranspose2d(in_ch,in_ch,2,stride=2)
+        #self.up = nn.ConvTranspose2d(int(in_ch/2),int(in_ch/2),2,stride=2)
         self.up = nn.Upsample(scale_factor=2)
         self.conv = double_conv(in_ch,out_ch)
         
