@@ -15,4 +15,4 @@ acc: 79.73%
 ### Feb 25, 2018
 
 3 downs (3->4096) 3 ups(bilinear)
-acc: 
+acc: 78.14% 

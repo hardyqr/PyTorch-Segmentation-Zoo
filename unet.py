@@ -12,7 +12,6 @@ import numpy as np
 from unet_layers import *
 
 ''' deeper u-net '''
-'''
 class Unet(nn.Module):
     def __init__(self, channels_in, classes_out):
         super(Unet, self).__init__()
@@ -50,9 +49,9 @@ class Unet(nn.Module):
         #print(x.shape)
         x = self.outc(x)
         return x
-'''
 
 ''' shallow u-net '''
+'''
 class Unet(nn.Module):
     def __init__(self, channels_in, classes_out):
         super(Unet, self).__init__()
@@ -87,6 +86,7 @@ class Unet(nn.Module):
         x = self.outc(x)
         return x
 
+'''
 
 
 if __name__ == "__main__":
