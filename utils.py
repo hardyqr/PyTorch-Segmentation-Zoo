@@ -12,7 +12,7 @@ import numpy as np
 from numpy import random
 from PIL import Image
 import PIL
-from osgeo import gdal
+#from osgeo import gdal
 import matplotlib.pyplot as plt
 from skimage import io, transform
 #import image_slicer
@@ -52,8 +52,8 @@ class img_dataset_train():
 
     def __getitem__(self, idx):
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
-        image = Image.open(self.img_dir+'/'+self.names[idx])
-        label = Image.open(self.mask_dir+'/'+self.names[idx])
+        image = Image.open(os.path.join(self.img_dir,self.names[idx]))
+        label = Image.open(os.path.join(self.mask_dir,self.names[idx]))
         
         #image = gdal.Open(self.img_dir+'/'+self.names[idx])
         #label = gdal.Open(self.mask_dir+'/'+self.names[idx])
@@ -66,7 +66,7 @@ class img_dataset_train():
         if self.transform:
             image = self.transform(image)
             label = self.transform(label)
-        # avoid inaccurate rgb labels
+        # avoid flawed masks
         label[ label[:,:,:] >= 0.5] = 1  
         label[ label[:,:,:] < 0.5] = 0
         return image, label
@@ -94,8 +94,8 @@ class img_dataset_val():
 
     def __getitem__(self, idx):
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
-        original_image = Image.open(self.img_dir+'/'+self.names[idx])
-        label = Image.open(self.mask_dir+'/'+self.names[idx])
+        original_image = Image.open(os.path.join(self.img_dir,self.names[idx]))
+        label = Image.open(os.path.join(self.mask_dir,self.names[idx]))
         
         #original_image = gdal.Open(self.img_dir+'/'+self.names[idx])
         #label = gdal.Open(self.mask_dir+'/'+self.names[idx])
@@ -134,7 +134,7 @@ class img_dataset_test():
 
     def __getitem__(self, idx):
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
-        original_image = Image.open(self.img_dir+'/'+self.names[idx])
+        original_image = Image.open(os.path.join(self.img_dir,self.names[idx]))
         
         #original_image = gdal.Open(self.img_dir+'/'+self.names[idx])
         # gdal.Dataset to ndarray
@@ -212,7 +212,7 @@ def to_var(x):
         x = x.cuda()
     return Variable(x)
 
-def rgb2onehot(labels):
+def rgb2onehot_isprs(labels):
     """
     Args:
         labels: A torch Variable.
@@ -245,7 +245,7 @@ def rgb2onehot(labels):
     onehot_labels[mask6] = ll6
     return Variable(torch.from_numpy(onehot_labels.transpose((0,3,1,2))).float())
 
-def onehot2rgb(predict):
+def onehot2rgb_isprs(predict):
     """
     Args:
         predict: A torch Variable.
@@ -283,7 +283,7 @@ def simple_acc(input, target):
         input: numpy matrix of prediction in rgb format.
         target: ground truth matrx in one-hot format.
     """
-    input = rgb2onehot(Variable(torch.from_numpy(input.transpose((0,3,1,2)))))
+    input = rgb2onehot_isprs(Variable(torch.from_numpy(input.transpose((0,3,1,2)))))
     iflat = input.view(-1)
     tflat = target.view(-1)
     intersection = (iflat * tflat).sum()

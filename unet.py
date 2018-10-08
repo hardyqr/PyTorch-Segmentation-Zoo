@@ -93,8 +93,8 @@ if __name__ == "__main__":
     """
     testing
     """
-    model = Unet(3,1)
-    x = Variable(torch.FloatTensor(np.random.random((1, 3, 512, 512))))
+    model = Unet(3,1).cuda()
+    x = Variable(torch.FloatTensor(np.random.random((1, 3, 512, 512)))).cuda()
     out = model(x)
     loss = torch.sum(out)
     loss.backward()
