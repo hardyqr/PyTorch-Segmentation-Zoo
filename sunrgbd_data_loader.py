@@ -27,7 +27,9 @@ normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                 std=[0.229, 0.224, 0.225])
 
 class SUN_RGBD_dataset_train():
-    """SUN-RGBD dataset - RGB-D semantic labeling."""
+    """ SUN-RGBD dataset - RGB-D semantic labeling.
+    Download datset from : http://cvgl.stanford.edu/data2/sun_rgbd.tgz
+    """
 
     def __init__(self,img_dir,depth_dir,mask_dir,transform=None):
         """
@@ -41,10 +43,13 @@ class SUN_RGBD_dataset_train():
         self.depth_dir = depth_dir
         self.mask_dir = mask_dir
         self.transform = transform
-        self.img_names = os.listdir(img_dir).sort()
-        self.depth_names = os.listdir(depth_dir).sort()
-        self.label_names = os.listdir(mask_dir).sort()
-        #names.sort()
+        self.img_names = os.listdir(img_dir)
+        self.depth_names = os.listdir(depth_dir)
+        self.label_names = os.listdir(mask_dir)
+        
+        self.img_names.sort()
+        self.depth_names.sort()
+        self.label_names.sort()
 
     def __len__(self):
         return len(self.img_names)
@@ -77,9 +82,14 @@ class SUN_RGBD_dataset_val():
         self.depth_dir = depth_dir
         self.img_dir = img_dir
         self.transform = transform
-        self.img_names = os.listdir(img_dir).sort()
-        self.depth_names = os.listdir(depth_dir).sort()
-        self.label_names = os.listdir(mask_dir).sort()
+        self.img_names = os.listdir(img_dir)
+        self.depth_names = os.listdir(depth_dir)
+        self.label_names = os.listdir(mask_dir)
+
+        self.img_names.sort()
+        self.depth_names.sort()
+        self.label_names.sort()
+
 
     def __len__(self):
         return len(self.img_names)
