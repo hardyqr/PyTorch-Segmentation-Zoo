@@ -15,6 +15,7 @@ import PIL
 #from osgeo import gdal
 import matplotlib.pyplot as plt
 from skimage import io, transform
+from sklearn.metrics import confusion_matrix  
 #import image_slicer
 
 import torch
@@ -308,6 +309,32 @@ if __name__ == "__main__":
             break
 
 '''
+
+def compute_iou(y_pred, y_true):
+    # ytrue, ypred is a flatten vector
+    _,y_pred = y_pred.max(1)
+    y_pred = y_pred.flatten()
+    y_true = y_true.flatten()
+    current = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    # compute mean iou
+    intersection = np.diag(current)
+    ground_truth_set = current.sum(axis=1)
+    predicted_set = current.sum(axis=0)
+    union = ground_truth_set + predicted_set - intersection
+    IoU = intersection / union.astype(np.float32)
+    return np.mean(IoU)
+
+def compute_pixel_acc(pred,gt):
+    """
+    Args:
+        pred - tensor of size (batch_size, n_classes, H, W)
+        gt - tensor of size (batch_size, H, W)
+    """
+    _,pred = pred.max(1)
+    _gt = to_np(gt)
+    _pred = to_np(pred)
+    return (_pred==_gt).sum()/len(gt.view(-1))
+
 if __name__ == "__main__":
     i = np.array(PIL.Image.open('gts.png'))
     i = i[:,:,0:3]

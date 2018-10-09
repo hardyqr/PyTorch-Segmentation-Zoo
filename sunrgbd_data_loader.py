@@ -16,6 +16,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 from torch.autograd import Variable
+import torchvision.transforms.functional as TF
 
 # Ignore warnings
 import warnings
@@ -53,18 +54,53 @@ class SUN_RGBD_dataset_train():
 
     def __len__(self):
         return len(self.img_names)
+    
+    def _transform(self, image, depth, mask):
+        # Resize
+        resize = transforms.Resize(size=(730, 530))
+        image = resize(image)
+        depth = resize(depth)
+        mask = resize(mask)
 
+        normalize1 = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225])
+        normalize2 = transforms.Normalize(mean=[19050],std=[9650])
+
+
+        # Random crop
+        i, j, h, w = transforms.RandomCrop.get_params(
+            image, output_size=(640,480))
+        image = TF.crop(image, i, j, h, w)
+        depth = TF.crop(image, i, j, h, w)
+        mask = TF.crop(mask, i, j, h, w)
+        
+        # Random horizontal flipping
+        if random.random() > 0.5:
+            image = TF.hflip(image)
+            depth = TF.hflip(image)
+            mask = TF.hflip(mask)
+
+        # Transform to tensor
+        image = TF.to_tensor(image).type('torch.FloatTensor')
+        depth = TF.to_tensor(depth).type('torch.FloatTensor')
+        mask = TF.to_tensor(mask).type('torch.FloatTensor')
+        # normalize
+        image = normalize1(image)
+        depth = normalize2(depth)
+        return image, depth, mask 
     def __getitem__(self, idx):
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
         image = Image.open(os.path.join(self.img_dir,self.img_names[idx])).convert('RGB')
         depth = Image.open(os.path.join(self.depth_dir,self.depth_names[idx]))
         label = Image.open(os.path.join(self.mask_dir,self.label_names[idx]))
 
-        if self.transform:
-            image = self.transform(image).type('torch.FloatTensor')
-            depth = self.transform(depth).type('torch.FloatTensor')
-            label = self.transform(label).type('torch.FloatTensor')
+        #if self.transform:
+        #    image = self.transform(image).type('torch.FloatTensor')
+        #    depth = self.transform(depth).type('torch.FloatTensor')
+        #    label = self.transform(label).type('torch.FloatTensor')
+        image, depth, label = self._transform(image,depth,label)
         return image, depth, label
+
 
 
 class SUN_RGBD_dataset_val():
@@ -101,11 +137,20 @@ class SUN_RGBD_dataset_val():
         label = Image.open(os.path.join(self.mask_dir,self.label_names[idx]))
        
         if self.transform:
+            normalize1 = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225])
+            normalize2 = transforms.Normalize(mean=[19050],std=[9650])
+
             image = self.transform(image).type('torch.FloatTensor')
             depth = self.transform(depth).type('torch.FloatTensor')
             label = self.transform(label).type('torch.FloatTensor')
+            image = normalize1(image)
+            depth = normalize2(depth)
+            # normalize
         #print(label.size())
         #return image, label, name, (original_image.size[0],original_image.size[1])
+
+
         return image, depth, label
 
 
@@ -187,3 +232,77 @@ def dice_loss(input, target):
     return 1 - ((2. * intersection + smooth) /
               (iflat.sum() + tflat.sum() + smooth))
 
+class sunrgbd_drawer():
+    def __init__(self):
+        self.n_classes = None
+    def decode_segmap(self, label_mask, n_classes, plot=False):
+        """Decode segmentation class labels into a color image
+        Args:
+            label_mask (np.ndarray): an (M,N) array of integer values denoting
+              the class label at each spatial location.
+            plot (bool, optional): whether to show the resulting color image
+              in a figure.
+        Returns:
+            (np.ndarray, optional): the resulting decoded color image.
+        """
+        #label_colours = self.get_pascal_labels()
+        label_colours = None
+        if n_classes == 13:
+            label_colours = self.get_13_colors()
+        else:
+            label_colours = get_spaced_colors(n_classes)
+        r = label_mask.copy()
+        g = label_mask.copy()
+        b = label_mask.copy()
+        for ll in range(n_classes):
+            r[label_mask == ll] = label_colours[ll, 0]
+            g[label_mask == ll] = label_colours[ll, 1]
+            b[label_mask == ll] = label_colours[ll, 2]
+        rgb = np.zeros((label_mask.shape[0], label_mask.shape[1], 3))
+        #print (rgb[:,:,0].shape,r.shape)
+        rgb[:, :, 0] = r / 255.0
+        rgb[:, :, 1] = g / 255.0
+        rgb[:, :, 2] = b / 255.0
+        if plot:
+            plt.imshow(rgb)
+            plt.show()
+        else:
+            return rgb
+    
+    def get_13_colors(self):
+        """Load the mapping that associates pascal classes with label colors
+            Returns:
+                np.ndarray with dimensions (13, 3)
+        """
+        return np.asarray(
+            [
+                [0, 0, 0],
+                [128, 0, 0],
+                [0, 128, 0],
+                [128, 128, 0],
+                [0, 0, 128],
+                [128, 0, 128],
+                [0, 128, 128],
+                [128, 128, 128],
+                [64, 0, 0],
+                [192, 0, 0],
+                [64, 128, 0],
+                [192, 128, 0],
+                [64, 0, 128],
+                #[192, 0, 128],
+                #[64, 128, 128],
+                #[192, 128, 128],
+                #[0, 64, 0],
+                #[128, 64, 0],
+                #[0, 192, 0],
+                #[128, 192, 0],
+                #[0, 64, 128],
+                # 21 above 
+                ]
+            ) 
+    def get_spaced_colors(n):
+        max_value = 16581375 #255**3
+        interval = int(max_value / n)
+        colors = [hex(I)[2:].zfill(6) for I in range(0, max_value, interval)]
+        
+        return [[int(i[:2], 16), int(i[2:4], 16), int(i[4:], 16)] for i in colors]  
