@@ -59,7 +59,6 @@ load_prev = False
 if(torch.cuda.is_available()):
     use_gpu = True
 
-
 # Handle data
 
 
@@ -73,7 +72,7 @@ train_set = SUN_RGBD_dataset_train(opt.train_rgb_path, opt.train_depth_path, opt
 
 val_set = SUN_RGBD_dataset_val(opt.val_rgb_path, opt.val_depth_path, opt.val_label_path,
         transform=transforms.Compose([
-            transforms.Resize((640,480)),
+            transforms.Resize((240,320)),
             transforms.ToTensor()]))
 
 #test_set =img_dataset_test(sys.argv[5],
@@ -109,12 +108,12 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 counter = 0
 
-def validate(early_break=False):
+def validate(iter_num=None, early_break=False):
     ''' val '''
     #print('Validation: ')
     accs = []
     IoUs = []
-    for i,(image, depth, label) in enumerate(val_loader):
+    for i,(image, depth, label,name) in enumerate(val_loader):
         # stack rgb and depth
         stacked = None
         if opt.use_depth:
@@ -128,6 +127,8 @@ def validate(early_break=False):
             stacked = stacked.cuda()
             labels = label.cuda()
         outputs = model(stacked)
+        #print (outputs)
+        #sys.exit(0)
 
         
         # acc 
@@ -136,9 +137,9 @@ def validate(early_break=False):
         #iou = compute_iou(outputs,labels)
         #iou = jaccard_similarity_score(outputs.detach().cpu().numpy(), labels.detach().cpu().numpy())
         #print ('i acc:{:.3f}'.format(100*acc))
-        accs.append(acc)
+        accs.append(float(acc))
         IoUs.append(0)
-        if i % 100 == 0 and i != 0:
+        if i % random.randint(50,150) == 0 and i != 0:
             print('current sample: {}, pixelAcc so far: {:.3f}% mIoU so far: {:.3f}'.format 
                     (i, 100*sum(accs)/float(len(accs)),100*sum(IoUs)/float(len(IoUs))))
             # take one sample out for visualization
@@ -148,14 +149,21 @@ def validate(early_break=False):
             #print (_outputs.size(), labels.size())
             output = to_np(_outputs[k])
             label = to_np(labels.squeeze(1)[k])
+            image_name = name[k].split('.')[0]
             output_rgb = d.decode_segmap(output,n_classes)
             label_rgb = d.decode_segmap(label,n_classes)
-            print (output_rgb.shape,label_rgb.shape)
+            #print (output_rgb.shape,label_rgb.shape)
             im1 = Image.fromarray(output_rgb.astype('uint8'))
             key = uuid.uuid4().hex.upper()[0:6]
-            im1.save(os.path.join('./generated_masks/','pred_'+key+'.png'))
+            if iter_num is None:iter_num = ""
+            im1.save(os.path.join('./generated_masks/','pred_'+image_name+'_'+str(iter_num)+'_'+key+'.png'))
             im2 = Image.fromarray(label_rgb.astype('uint8'))
-            im2.save(os.path.join('./generated_masks/','gt_'+key+'.png'))
+            im2.save(os.path.join('./generated_masks/','gt_'+image_name+'_'+str(iter_num)+'_'+key+'.png'))
+
+            del output
+            del label
+            del outputs
+            del labels
 
             if early_break:
                 return None
@@ -179,7 +187,8 @@ for epoch in range(num_epochs):
     elif (epoch == 25):
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate/100)
     #"""
-    #validate()
+    if opt.debug:
+        validate()
     for i,(image,depth,label) in enumerate(train_loader):
         if(debug and counter>=3):break
         counter+=1
@@ -201,7 +210,8 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
         outputs = model(images)
         #target = labels.view(-1, )
-        #print(outputs)
+        #print(outputs.shape)
+        #sys.exit(0)
         #print(labels)
         loss = criterion(outputs, labels)
         #loss = dice_loss(outputs, labels)
@@ -210,15 +220,18 @@ for epoch in range(num_epochs):
 
         #validate(True)
 
-        if (i+1) % 100 == 0:
+        if (i+1) % 500 == 0:
             print ('Epoch [%d/%d], Batch [%d/%d] Loss: %.6f'
                    %(epoch+1, num_epochs,i+1, len(train_loader),loss.data[0]))
-            validate(True)
+            validate(i,True)
         if (i+1) % 5000 == 0:
-            validate()
+            validate(i,False)
             # save Model
             if (not debug):
-                torch.save(model.state_dict(),os.path.join('~/models/','epoch_'+str(i)+'_model.pkl'))
+                try:
+                    torch.save(model.state_dict(),os.path.join('/home/fangyu/models/','epoch_'+str(i)+'_model.pkl'))
+                except:
+                    print ('save failed.')
 
 
        

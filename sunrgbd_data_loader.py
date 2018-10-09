@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from numpy import random
 from PIL import Image
+import skimage
 import PIL
 import matplotlib.pyplot as plt
 from skimage import io, transform
@@ -57,7 +58,7 @@ class SUN_RGBD_dataset_train():
     
     def _transform(self, image, depth, mask):
         # Resize
-        resize = transforms.Resize(size=(730, 530))
+        resize = transforms.Resize(size=(280, 360))
         image = resize(image)
         depth = resize(depth)
         mask = resize(mask)
@@ -69,21 +70,26 @@ class SUN_RGBD_dataset_train():
 
         # Random crop
         i, j, h, w = transforms.RandomCrop.get_params(
-            image, output_size=(640,480))
+            image, output_size=(240,320))
         image = TF.crop(image, i, j, h, w)
         depth = TF.crop(image, i, j, h, w)
         mask = TF.crop(mask, i, j, h, w)
-        
+ 
         # Random horizontal flipping
         if random.random() > 0.5:
             image = TF.hflip(image)
             depth = TF.hflip(image)
             mask = TF.hflip(mask)
+        
 
         # Transform to tensor
         image = TF.to_tensor(image).type('torch.FloatTensor')
         depth = TF.to_tensor(depth).type('torch.FloatTensor')
-        mask = TF.to_tensor(mask).type('torch.FloatTensor')
+        #mask = TF.to_tensor(mask).type('torch.FloatTensor')
+        mask = torch.from_numpy(np.array(mask)).type('torch.FloatTensor')
+        #print (mask)
+        #sys.exit(0)
+
         # normalize
         image = normalize1(image)
         depth = normalize2(depth)
@@ -134,7 +140,7 @@ class SUN_RGBD_dataset_val():
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
         image = Image.open(os.path.join(self.img_dir,self.img_names[idx])).convert('RGB')
         depth = Image.open(os.path.join(self.depth_dir,self.depth_names[idx]))
-        label = Image.open(os.path.join(self.mask_dir,self.label_names[idx]))
+        label = np.array(Image.open(os.path.join(self.mask_dir,self.label_names[idx])))
        
         if self.transform:
             normalize1 = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -143,7 +149,12 @@ class SUN_RGBD_dataset_val():
 
             image = self.transform(image).type('torch.FloatTensor')
             depth = self.transform(depth).type('torch.FloatTensor')
-            label = self.transform(label).type('torch.FloatTensor')
+            #print (label)
+            #label = self.transform(label).type('torch.FloatTensor')
+            label = skimage.transform.resize(label, (240, 320), order=0,
+                    mode='reflect', preserve_range=True)
+            label = torch.from_numpy(label).type('torch.FloatTensor')
+            #print (label)
             image = normalize1(image)
             depth = normalize2(depth)
             # normalize
@@ -151,7 +162,7 @@ class SUN_RGBD_dataset_val():
         #return image, label, name, (original_image.size[0],original_image.size[1])
 
 
-        return image, depth, label
+        return image, depth, label, self.img_names[idx]
 
 
 def show_imgs(image, labels):
@@ -247,29 +258,37 @@ class sunrgbd_drawer():
         """
         #label_colours = self.get_pascal_labels()
         label_colours = None
-        if n_classes == 13:
-            label_colours = self.get_13_colors()
+        if n_classes == 14:
+            label_colours = self.get_14_colors()
         else:
-            label_colours = get_spaced_colors(n_classes)
+            label_colours = self.get_spaced_colors(n_classes)
         r = label_mask.copy()
         g = label_mask.copy()
         b = label_mask.copy()
+        #print (label_colours.shape)
+        #print (label_colours[0,0])
+        #sys.exit(0)
         for ll in range(n_classes):
             r[label_mask == ll] = label_colours[ll, 0]
             g[label_mask == ll] = label_colours[ll, 1]
             b[label_mask == ll] = label_colours[ll, 2]
+        #print (r.shape) # (640,480)
+        #print (r[1])
         rgb = np.zeros((label_mask.shape[0], label_mask.shape[1], 3))
         #print (rgb[:,:,0].shape,r.shape)
-        rgb[:, :, 0] = r / 255.0
-        rgb[:, :, 1] = g / 255.0
-        rgb[:, :, 2] = b / 255.0
+        #rgb[:, :, 0] = r / 255.0
+        rgb[:, :, 0] = r 
+        #rgb[:, :, 1] = g / 255.0
+        rgb[:, :, 1] = g 
+        #rgb[:, :, 2] = b / 255.0
+        rgb[:, :, 2] = b 
         if plot:
             plt.imshow(rgb)
             plt.show()
         else:
             return rgb
     
-    def get_13_colors(self):
+    def get_14_colors(self):
         """Load the mapping that associates pascal classes with label colors
             Returns:
                 np.ndarray with dimensions (13, 3)
@@ -289,7 +308,7 @@ class sunrgbd_drawer():
                 [64, 128, 0],
                 [192, 128, 0],
                 [64, 0, 128],
-                #[192, 0, 128],
+                [192, 0, 128],
                 #[64, 128, 128],
                 #[192, 128, 128],
                 #[0, 64, 0],
@@ -300,9 +319,9 @@ class sunrgbd_drawer():
                 # 21 above 
                 ]
             ) 
-    def get_spaced_colors(n):
+    def get_spaced_colors(self,n):
         max_value = 16581375 #255**3
         interval = int(max_value / n)
         colors = [hex(I)[2:].zfill(6) for I in range(0, max_value, interval)]
         
-        return [[int(i[:2], 16), int(i[2:4], 16), int(i[4:], 16)] for i in colors]  
+        return np.array([[int(i[:2], 16), int(i[2:4], 16), int(i[4:], 16)] for i in colors]  )
