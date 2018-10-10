@@ -18,20 +18,26 @@ import argparse
 from distutils.version import LooseVersion
 import argparse
 from sklearn.metrics import jaccard_similarity_score
+from tensorboardX import SummaryWriter
+
 
 from utils import *
-from unet import *
-from duc_hdc import ResNetDUC, ResNetDUCHDC
-from sunrgbd_data_loader import SUN_RGBD_dataset_train,SUN_RGBD_dataset_val, sunrgbd_drawer
+from models.unet import *
+from models.duc_hdc import ResNetDUC, ResNetDUCHDC
+from dataloaders.sunrgbd_data_loader import SUN_RGBD_dataset_train,SUN_RGBD_dataset_val, sunrgbd_drawer
+from dataloaders.pascal_voc_data_loader import pascal_voc_dataset_train, pascal_voc_dataset_val
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_root', default='~/data/standord-indoor/')
 parser.add_argument('--train_rgb_path', default='~/data/standord-indoor/area_1/data/rgb/')
 parser.add_argument('--train_depth_path', default='~/data/standord-indoor/area_1/data/rgb/')
 parser.add_argument('--train_label_path', default='~/data/standord-indoor/area_1/data/semantic/')
 parser.add_argument('--val_rgb_path', default='~/data/standord-indoor/area_2/data/rgb/')
 parser.add_argument('--val_depth_path', default='~/data/standord-indoor/area_2/data/rgb/')
 parser.add_argument('--val_label_path', default='~/data/standord-indoor/area_2/data/semantic/')
+parser.add_argument('--model', default='ResNetDUCHDC',help="select from {ResNetDUCHDC,UNet}")
+parser.add_argument('--data', default='SUNRGBD',help="select from {SUNRGBD,Pascal_VOC}")
 parser.add_argument('--batch_size', default='4',type=int)
 parser.add_argument('--image_size', default='512',type=int)
 parser.add_argument('--n_classes', default='13',type=int)
@@ -43,6 +49,8 @@ parser.add_argument('--resume', default='',type=str)
 
 opt = parser.parse_args()
 print(opt)
+
+writer = SummaryWriter()
 
 # Hyper params
 num_epochs = 30
@@ -60,20 +68,41 @@ if(torch.cuda.is_available()):
     use_gpu = True
 
 # Handle data
+train_sizes = None #[(reisze_size),(crop_size)]
+val_transform = None
+train_set = None
+val_set = None
 
 
-train_set = SUN_RGBD_dataset_train(opt.train_rgb_path, opt.train_depth_path, opt.train_label_path)
-        #transform=transforms.Compose([
-           # transforms.RandomHorizontalFlip(), 
-            #transforms.RandomResizedCrop(opt.image_size), 
-            #transforms.RandomCrop((640,480)),
-            #transforms.Resize((512,512)),
-            #transforms.ToTensor()]))
+# transforms
+if opt.model == 'UNet':
+    sizes = [(600,600),(512,512)]
+else:
+    sizes = [(280,236),(240,320)]
 
-val_set = SUN_RGBD_dataset_val(opt.val_rgb_path, opt.val_depth_path, opt.val_label_path,
-        transform=transforms.Compose([
+if opt.model == 'UNet':
+    val_transform = transforms.Compose([
+            transforms.Resize((512,512)),
+            transforms.ToTensor()])
+else:
+    val_transform = transforms.Compose([
             transforms.Resize((240,320)),
-            transforms.ToTensor()]))
+            transforms.ToTensor()])
+
+# choose dataloader
+if opt.data == "SUNRGBD":
+    train_set = SUN_RGBD_dataset_train(opt.train_rgb_path, opt.train_depth_path, opt.train_label_path,sizes=sizes)
+    val_set = SUN_RGBD_dataset_val(opt.val_rgb_path, 
+        opt.val_depth_path, opt.val_label_path,
+        transform=val_transform,sizes=sizes)
+elif: opt.data == "Pascal_VOC":
+    train_set = pascal_voc_dataset_train(opt.data_root,sizes=sizes)
+    val_set = pascal_voc_dataset_val(opt.data_root,
+            transform=val_transform,sizes=sizes)
+
+
+
+
 
 #test_set =img_dataset_test(sys.argv[5],
 #        transform=transforms.Compose([
@@ -94,7 +123,14 @@ val_loader = torch.utils.data.DataLoader(
 
 #unet = Unet(4,13)
 n_classes = opt.n_classes
-model = ResNetDUCHDC(n_classes)
+model = None
+if opt.model == "ResNetDUCHDC":
+    model = ResNetDUCHDC(n_classes)
+elif opt.model == "UNet":
+    if opt.use_depth:
+        model = Unet(4, n_classes)
+    else:
+        model = Unet(3,n_classes)
 
 if(opt.load_prev != 'none'):
     model.load_state_dict(torch.load(opt.load_prev))
@@ -139,6 +175,8 @@ def validate(iter_num=None, early_break=False):
         #print ('i acc:{:.3f}'.format(100*acc))
         accs.append(float(acc))
         IoUs.append(0)
+
+        # sample some image for visualization
         if i % random.randint(50,150) == 0 and i != 0:
             print('current sample: {}, pixelAcc so far: {:.3f}% mIoU so far: {:.3f}'.format 
                     (i, 100*sum(accs)/float(len(accs)),100*sum(IoUs)/float(len(IoUs))))
@@ -220,39 +258,22 @@ for epoch in range(num_epochs):
 
         #validate(True)
 
-        if (i+1) % 500 == 0:
+        if (i+1) % 100 == 0:
             print ('Epoch [%d/%d], Batch [%d/%d] Loss: %.6f'
                    %(epoch+1, num_epochs,i+1, len(train_loader),loss.data[0]))
             validate(i,True)
-        if (i+1) % 5000 == 0:
-            validate(i,False)
-            # save Model
-            if (not debug):
-                try:
-                    torch.save(model.state_dict(),os.path.join('/home/fangyu/models/','epoch_'+str(i)+'_model.pkl'))
-                except:
-                    print ('save failed.')
+    
+    validate((epoch+1)*len(train_loader),False)
+    # save Model
+    if (not debug):
+        try:
+            name = opt.model+'_epoch_'+str(epoch+1)+'_model.pkl'
+            if opt.use_depth:
+                name = opt.model+'_epoch_'+str(epoch+1)+'_use_depth_model.pkl'
+            torch.save(model.state_dict(),os.path.join('/home/fangyu/models/',name))
+        except:
+            print ('save failed.')
 
 
        
-    ''' test '''
-    """
-    print('running test set... ')
-    for i,(image,(w,h)) in enumerate(tqdm(test_loader)):
-        image = Variable(image).cuda()
-        img = unet(image)
-        #acc = simple_acc(outputs,labels)# Truth_Positive / NumberOfPixels
-        #print(acc)
-        img = onehot2rgb(img)
-        img = np.uint8(img[0]*255)
-        img = Image.fromarray(img, 'RGB')
-        img = img.resize((w.numpy(),h.numpy()))
-        #img.show()
-
-        img.save(sys.argv[6] + '/test_' + str(epoch) + '_' + str(i)+ '.png')
-    """
-
-
-
-
 

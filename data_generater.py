@@ -1,5 +1,7 @@
 # Feb 19, 2018 @BH
 
+# data augmentation for isprs 2d segmentation (Vaihingen) benchmark dataset
+
 from utils import *
 import sys
 from PIL import Image
