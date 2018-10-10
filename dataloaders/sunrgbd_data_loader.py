@@ -73,13 +73,13 @@ class SUN_RGBD_dataset_train():
         i, j, h, w = transforms.RandomCrop.get_params(
             image, output_size=sizes[1])
         image = TF.crop(image, i, j, h, w)
-        depth = TF.crop(image, i, j, h, w)
+        depth = TF.crop(depth, i, j, h, w)
         mask = TF.crop(mask, i, j, h, w)
  
         # Random horizontal flipping
         if random.random() > 0.5:
             image = TF.hflip(image)
-            depth = TF.hflip(image)
+            depth = TF.hflip(depth)
             mask = TF.hflip(mask)
         
 
@@ -139,6 +139,10 @@ class SUN_RGBD_dataset_val():
         return len(self.img_names)
 
     def __getitem__(self, idx):
+        """
+        return:
+            image,depth,label,image path (for visualization)
+        """
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
         image = Image.open(os.path.join(self.img_dir,self.img_names[idx])).convert('RGB')
         depth = Image.open(os.path.join(self.depth_dir,self.depth_names[idx]))
@@ -164,86 +168,8 @@ class SUN_RGBD_dataset_val():
         #return image, label, name, (original_image.size[0],original_image.size[1])
 
 
-        return image, depth, label, self.img_names[idx]
+        return image, depth, label, os.path.join(self.img_dir,self.img_names[idx])
 
-
-def show_imgs(image, labels):
-    """Show image with landmarks"""
-    plt.imshow(image)
-    #plt.scatter(landmarks[:, 0], landmarks[:, 1], s=10, marker='.', c='r')
-    plt.pause(2)  # pause a bit so that plots are updated
-
-
-def random_transpose(image, label):
-    methods = [PIL.Image.FLIP_LEFT_RIGHT,
-                    PIL.Image.FLIP_TOP_BOTTOM,
-                    PIL.Image.ROTATE_90,
-                    PIL.Image.ROTATE_180,
-                    PIL.Image.ROTATE_270,
-                    PIL.Image.TRANSPOSE]
-    r = random.randint(0,len(methods)-1)
-    method = methods[r]
-    if(random.randint(0,2) != 0):# 1/3 keep
-        image = image.transpose(method) # transpose
-        label = label.transpose(method) # transpose
-    return image, label
-
-def random_crop(PIL_img,label,ratio):
-    """
-    Args:
-        PIL_img: image in PIL format.
-        ratio: 0 < ratio <= 1.
-    output:
-        A PIL formt image with side length ratio*original side length.
-    """
-    (width, height) = PIL_img.size
-    h_shift = np.random.randint(-height*(1-ratio)/2+1,height*(1-ratio)/2-1)
-    w_shift = np.random.randint(-width*(1-ratio)/2+1,width*(1-ratio)/2-1)
-    new_center = (int(height/2)+h_shift,int(width/2)+w_shift)
-    cropped_area = (
-                new_center[1] - ratio*width/2,
-                new_center[0] - ratio*height/2,
-                new_center[1] + ratio*width/2,
-                new_center[0] + ratio*height/2
-                )
-    return PIL_img.crop(cropped_area), label.crop(cropped_area)
-
-def random_rotate(PIL_img, label, _range):
-    (width, height) = PIL_img.size
-    angle = np.random.randint(-_range,_range)
-    ratio = 0.7
-    img = PIL_img.rotate(angle)
-    label = label.rotate(angle)
-    center = (int(height/2),int(width/2))
-    cropped_area = (
-                center[1] - ratio*width/2,
-                center[0] - ratio*height/2,
-                center[1] + ratio*width/2,
-                center[0] + ratio*height/2
-                )   
-    return img.crop(cropped_area), label.crop(cropped_area)
-
-
-
-def to_np(x):
-    return x.data.cpu().numpy()
-
-def to_var(x):
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return Variable(x)
-
-# Dice Loss - a loss for multi-class segmentation task
-# https://github.com/pytorch/pytorch/issues/1249
-def dice_loss(input, target):
-    smooth = 1.
-
-    iflat = input.view(-1)
-    tflat = target.view(-1)
-    intersection = (iflat * tflat).sum()
-    
-    return 1 - ((2. * intersection + smooth) /
-              (iflat.sum() + tflat.sum() + smooth))
 
 class sunrgbd_drawer():
     def __init__(self):

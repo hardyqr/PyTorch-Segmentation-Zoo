@@ -30,12 +30,15 @@ from dataloaders.pascal_voc_data_loader import pascal_voc_dataset_train, pascal_
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_root', default='~/data/standord-indoor/')
+parser.add_argument('--log_path', default='runs')
 parser.add_argument('--train_rgb_path', default='~/data/standord-indoor/area_1/data/rgb/')
 parser.add_argument('--train_depth_path', default='~/data/standord-indoor/area_1/data/rgb/')
 parser.add_argument('--train_label_path', default='~/data/standord-indoor/area_1/data/semantic/')
 parser.add_argument('--val_rgb_path', default='~/data/standord-indoor/area_2/data/rgb/')
 parser.add_argument('--val_depth_path', default='~/data/standord-indoor/area_2/data/rgb/')
 parser.add_argument('--val_label_path', default='~/data/standord-indoor/area_2/data/semantic/')
+parser.add_argument('--pascal_train_file', default='./train.txt')
+parser.add_argument('--pascal_val_file', default='~/val.txt')
 parser.add_argument('--model', default='ResNetDUCHDC',help="select from {ResNetDUCHDC,UNet}")
 parser.add_argument('--data', default='SUNRGBD',help="select from {SUNRGBD,Pascal_VOC}")
 parser.add_argument('--batch_size', default='4',type=int)
@@ -78,7 +81,7 @@ val_set = None
 if opt.model == 'UNet':
     sizes = [(600,600),(512,512)]
 else:
-    sizes = [(280,236),(240,320)]
+    sizes = [(280,360),(240,320)]
 
 if opt.model == 'UNet':
     val_transform = transforms.Compose([
@@ -95,14 +98,10 @@ if opt.data == "SUNRGBD":
     val_set = SUN_RGBD_dataset_val(opt.val_rgb_path, 
         opt.val_depth_path, opt.val_label_path,
         transform=val_transform,sizes=sizes)
-elif: opt.data == "Pascal_VOC":
-    train_set = pascal_voc_dataset_train(opt.data_root,sizes=sizes)
-    val_set = pascal_voc_dataset_val(opt.data_root,
+elif opt.data == "Pascal_VOC":
+    train_set = pascal_voc_dataset_train(opt.pascal_train_file,opt.data_root,sizes=sizes)
+    val_set = pascal_voc_dataset_val(opt.pascal_val_file, opt.data_root,
             transform=val_transform,sizes=sizes)
-
-
-
-
 
 #test_set =img_dataset_test(sys.argv[5],
 #        transform=transforms.Compose([
@@ -149,7 +148,7 @@ def validate(iter_num=None, early_break=False):
     #print('Validation: ')
     accs = []
     IoUs = []
-    for i,(image, depth, label,name) in enumerate(val_loader):
+    for i,(image, depth, label, img_path) in enumerate(val_loader):
         # stack rgb and depth
         stacked = None
         if opt.use_depth:
@@ -166,7 +165,6 @@ def validate(iter_num=None, early_break=False):
         #print (outputs)
         #sys.exit(0)
 
-        
         # acc 
         #acc = simple_acc(outputs,labels)# Truth_Positive / NumberOfPixels
         acc = compute_pixel_acc(outputs,labels)
@@ -187,7 +185,8 @@ def validate(iter_num=None, early_break=False):
             #print (_outputs.size(), labels.size())
             output = to_np(_outputs[k])
             label = to_np(labels.squeeze(1)[k])
-            image_name = name[k].split('.')[0]
+            _img_path = img_path[k]
+            image_name = img_path[k].split('/')[-1].split('.')[0]
             output_rgb = d.decode_segmap(output,n_classes)
             label_rgb = d.decode_segmap(label,n_classes)
             #print (output_rgb.shape,label_rgb.shape)
@@ -197,6 +196,8 @@ def validate(iter_num=None, early_break=False):
             im1.save(os.path.join('./generated_masks/','pred_'+image_name+'_'+str(iter_num)+'_'+key+'.png'))
             im2 = Image.fromarray(label_rgb.astype('uint8'))
             im2.save(os.path.join('./generated_masks/','gt_'+image_name+'_'+str(iter_num)+'_'+key+'.png'))
+            im3 = Image.open(_img_path).resize(sizes[1])
+            im3.save(os.path.join('./generated_masks/','rgb_'+image_name+'_'+str(iter_num)+'_'+key+'.png'))
 
             del output
             del label
@@ -204,29 +205,40 @@ def validate(iter_num=None, early_break=False):
             del labels
 
             if early_break:
-                return None
+                if opt.debug:
+                    print ('break loop')
+                    break
+                else:
+                    return None
 
         #img = np.uint8(img[0]*255)
         #img = Image.fromarray(img, 'RGB')
         #img = img.resize((w.numpy(),h.numpy()))
         #img.show()
         #img.save(sys.argv[6] + '/val_' + str(epoch) + '_' + str(i)+ '.png')
-    print('Overall pixelAcc - all pics: %.3f%%' % (100*sum(accs)/float(len(accs))))
+    # TODO
+    # send some generated masks to visdom
+    #im3 = Image.open(_img_path)
+    #writer.add_image('rgb_'+image_name,np.array(im3),global_step=iter_num)
+    #writer.add_image('gt_'+image_name,np.array(im2),global_step=iter_num)
+    #writer.add_image('pred_'+image_name,np/array(im1),global_step=iter_num)
+
+    pixel_acc = sum(accs)/float(len(accs))
+    mIoU = None # TODO
+    print('Overall pixelAcc - all pics: %.3f%%' % (100*pixel_acc))
+    return pixel_acc, mIoU
 
 print("len(train_loader) :" ,len(train_loader))
 # Train the Model
 for epoch in range(num_epochs):
     #if(debug and counter>=3): break
     #"""
-    if (epoch == 5):
+    # learning rate decay by 10 times every 10 epochs
+    if (epoch+1) % 10 == 0:
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate/10)
-    elif (epoch == 15):
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate/20)
-    elif (epoch == 25):
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate/100)
     #"""
     if opt.debug:
-        validate()
+        validate(-1,True)
     for i,(image,depth,label) in enumerate(train_loader):
         if(debug and counter>=3):break
         counter+=1
@@ -257,13 +269,14 @@ for epoch in range(num_epochs):
         optimizer.step()
 
         #validate(True)
-
         if (i+1) % 100 == 0:
+            writer.add_scalar('loss',loss.data[0], global_step=epoch*len(train_loader)+i)
             print ('Epoch [%d/%d], Batch [%d/%d] Loss: %.6f'
                    %(epoch+1, num_epochs,i+1, len(train_loader),loss.data[0]))
-            validate(i,True)
+            _ = validate(i,early_break=True)
     
-    validate((epoch+1)*len(train_loader),False)
+    pixel_acc,_ = validate((epoch+1)*len(train_loader),early_break=False)
+    writer.add_scalar('val_pixel_acc',pixel_acc,global_step=(epoch+1)*len(train_loader))
     # save Model
     if (not debug):
         try:
@@ -273,6 +286,14 @@ for epoch in range(num_epochs):
             torch.save(model.state_dict(),os.path.join('/home/fangyu/models/',name))
         except:
             print ('save failed.')
+
+# save some logs
+writer.export_scalars_to_json("./all_scalars.json")
+with open("./all_scalars.json", "a") as myfile:
+    myfile.write('\n')
+    myfile.write(print (opt))
+writer.close()
+
 
 
        

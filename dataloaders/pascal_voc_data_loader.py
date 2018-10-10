@@ -41,7 +41,7 @@ class pascal_voc_dataset_train():
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.name_table = pd.read_csv(name_list_file)
+        self.name_table = pd.read_csv(name_list_file,names=['rgb','gt'],delim_whitespace=True)
         self.root_dir = root_dir
         self.transform = transform
 
@@ -79,15 +79,18 @@ class pascal_voc_dataset_train():
         # normalize
         image = normalize(image)
 
-        return image, depth, mask 
+        return image, mask 
     def __getitem__(self, idx):
         #print ('\tcalling Dataset:__getitem__ @ idx=%d'%idx)
-        image = Image.open(os.path.join(self.root_dir,self.name_table.iloc[idx].rgb)).convert('RGB')
-        label = Image.open(os.path.join(self.root_dir,self.name_table.iloc[idx].gt))
+        img_path = os.path.join(self.root_dir,(self.name_table.iloc[idx][0])[1:])
+        label_path = os.path.join(self.root_dir,(self.name_table.iloc[idx][1])[1:])
+        image = Image.open(img_path).convert('RGB')
+        label = Image.open(label_path)
 
-        image, label = self._transform(image,label)
-
-        return image, label
+        image, label = self._transform(image,label,sizes=self.sizes)
+        
+        # image, depth(non-exist in this datset), label
+        return image,"None",label
 
 
 class pascal_voc_dataset_val():
@@ -101,7 +104,7 @@ class pascal_voc_dataset_val():
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.name_table = pd.read_csv(name_list_file)
+        self.name_table = pd.read_csv(name_list_file,names=['rgb','gt'],delim_whitespace=True)
         self.root_dir = root_dir
         self.transform = transform
 
@@ -111,8 +114,8 @@ class pascal_voc_dataset_val():
         return len(self.name_table)
 
     def __getitem__(self, idx):
-        image = Image.open(os.path.join(self.root_dir,self.name_table.iloc[idx].rgb)).convert('RGB')
-        label = Image.open(os.path.join(self.root_dir,self.name_table.iloc[idx].gt))
+        image = Image.open(os.path.join(self.root_dir,self.name_table.iloc[idx][0][1:])).convert('RGB')
+        label = Image.open(os.path.join(self.root_dir,self.name_table.iloc[idx][1][1:]))
        
         if self.transform:
             normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -124,7 +127,7 @@ class pascal_voc_dataset_val():
             label = torch.from_numpy(label).type('torch.FloatTensor')
             image = normalize(image)
 
-        return image, label, self.name_table.iloc[idx].rgb.split('.')[0]
+        return image, None, label, os.path.join(self.root_dir,self.name_table.iloc[idx].rgb[1:])
 
 
 def show_imgs(image, labels):
