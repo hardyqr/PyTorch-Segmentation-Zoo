@@ -114,7 +114,7 @@ def compute_iou(y_pred, y_true):
     IoU = intersection / union.astype(np.float32)
     return np.mean(IoU)
 
-def compute_pixel_acc(pred,gt):
+def compute_pixel_acc(pred,gt,ignore_label=-1):
     """
     Args:
         pred - tensor of size (batch_size, n_classes, H, W)
@@ -123,5 +123,14 @@ def compute_pixel_acc(pred,gt):
     _,pred = pred.max(1)
     _gt = to_np(gt)
     _pred = to_np(pred)
-    return (_pred==_gt).sum()/len(gt.view(-1))
+    pixel_acc = None
+    if ignore_label != -1:
+        valid_mask = np.ones(_gt.shape).astype(bool)
+        valid_mask[_gt==ignore_label] = False
+        total = valid_mask.sum()
+        correct_pixel = (_pred*valid_mask==_gt*valid_mask).sum()-len(gt.view(-1))+total
+        pixel_acc = correct_pixel / total
+    else:
+        pixel_acc = (_pred==_gt).sum()/len(gt.view(-1))
+    return pixel_acc
 

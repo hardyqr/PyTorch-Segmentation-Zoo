@@ -24,6 +24,7 @@ from tensorboardX import SummaryWriter
 from utils import *
 from models.unet import *
 from models.duc_hdc import ResNetDUC, ResNetDUCHDC
+from models.deeplab_resnet import Res_Deeplab
 from dataloaders.sunrgbd_data_loader import SUN_RGBD_dataset_train,SUN_RGBD_dataset_val, sunrgbd_drawer
 from dataloaders.pascal_voc_data_loader import pascal_voc_dataset_train, pascal_voc_dataset_val
 
@@ -39,7 +40,7 @@ parser.add_argument('--val_depth_path', default='~/data/standord-indoor/area_2/d
 parser.add_argument('--val_label_path', default='~/data/standord-indoor/area_2/data/semantic/')
 parser.add_argument('--pascal_train_file', default='./train.txt')
 parser.add_argument('--pascal_val_file', default='~/val.txt')
-parser.add_argument('--model', default='ResNetDUCHDC',help="select from {ResNetDUCHDC,UNet}")
+parser.add_argument('--model', default='ResNetDUCHDC',help="select from {ResNetDUCHDC,UNet,Deeplab}")
 parser.add_argument('--data', default='SUNRGBD',help="select from {SUNRGBD,Pascal_VOC}")
 parser.add_argument('--batch_size', default='4',type=int)
 parser.add_argument('--image_size', default='512',type=int)
@@ -54,6 +55,9 @@ opt = parser.parse_args()
 print(opt)
 
 writer = SummaryWriter()
+
+
+IGNORE_LABEL = 0
 
 # Hyper params
 num_epochs = 30
@@ -91,6 +95,8 @@ else:
     val_transform = transforms.Compose([
             transforms.Resize((240,320)),
             transforms.ToTensor()])
+
+interp = nn.Upsample(size=sizes[1], mode='bilinear')
 
 # choose dataloader
 if opt.data == "SUNRGBD":
@@ -130,6 +136,8 @@ elif opt.model == "UNet":
         model = Unet(4, n_classes)
     else:
         model = Unet(3,n_classes)
+elif opt.model == "Deeplab":
+    model = Res_Deeplab(num_classes=n_classes)
 
 if(opt.load_prev != 'none'):
     model.load_state_dict(torch.load(opt.load_prev))
@@ -138,8 +146,9 @@ if(use_gpu):
     model.cuda()
 
 #criterion = nn.MSELoss()
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+criterion = nn.CrossEntropyLoss(ignore_index=IGNORE_LABEL)
+#optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate, momentum = 0.9,weight_decay = 0.0005)
 
 counter = 0
 
@@ -162,12 +171,14 @@ def validate(iter_num=None, early_break=False):
             stacked = stacked.cuda()
             labels = label.cuda()
         outputs = model(stacked)
+        if opt.model == "Deeplab":
+            outputs = interp(outputs) 
         #print (outputs)
         #sys.exit(0)
 
         # acc 
         #acc = simple_acc(outputs,labels)# Truth_Positive / NumberOfPixels
-        acc = compute_pixel_acc(outputs,labels)
+        acc = compute_pixel_acc(outputs,labels,ignore_label=IGNORE_LABEL)
         #iou = compute_iou(outputs,labels)
         #iou = jaccard_similarity_score(outputs.detach().cpu().numpy(), labels.detach().cpu().numpy())
         #print ('i acc:{:.3f}'.format(100*acc))
@@ -259,10 +270,13 @@ for epoch in range(num_epochs):
         # Forward + Backward + Optimize
         optimizer.zero_grad()
         outputs = model(images)
+        if opt.model == "Deeplab":
+            outputs = interp(outputs) 
         #target = labels.view(-1, )
-        #print(outputs.shape)
         #sys.exit(0)
         #print(labels)
+
+
         loss = criterion(outputs, labels)
         #loss = dice_loss(outputs, labels)
         loss.backward()
@@ -288,13 +302,11 @@ for epoch in range(num_epochs):
             print ('save failed.')
 
 # save some logs
+"""
 writer.export_scalars_to_json("./all_scalars.json")
 with open("./all_scalars.json", "a") as myfile:
     myfile.write('\n')
     myfile.write(print (opt))
+"""
 writer.close()
-
-
-
-       
 
