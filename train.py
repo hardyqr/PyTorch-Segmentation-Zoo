@@ -24,43 +24,53 @@ from tensorboardX import SummaryWriter
 from utils import *
 from models.unet import *
 from models.duc_hdc import ResNetDUC, ResNetDUCHDC
-from models.deeplab_resnet import Res_Deeplab
+from loss.focalloss2d import FocalLoss2d 
+from KernelCut.kernelcut import *
+#from models.deeplab_resnet import Res_Deeplab
+from models.deeplab_resnet_2 import Res_Deeplab
 from dataloaders.sunrgbd_data_loader import SUN_RGBD_dataset_train,SUN_RGBD_dataset_val, sunrgbd_drawer
 from dataloaders.pascal_voc_data_loader import pascal_voc_dataset_train, pascal_voc_dataset_val
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_root', default='~/data/standord-indoor/')
-parser.add_argument('--log_path', default='runs')
+parser.add_argument('--log_path', default='None')
 parser.add_argument('--train_rgb_path', default='~/data/standord-indoor/area_1/data/rgb/')
 parser.add_argument('--train_depth_path', default='~/data/standord-indoor/area_1/data/rgb/')
 parser.add_argument('--train_label_path', default='~/data/standord-indoor/area_1/data/semantic/')
+parser.add_argument('--train_seeds_path', default='~/data/standord-indoor/area_1/data/seeds/')
 parser.add_argument('--val_rgb_path', default='~/data/standord-indoor/area_2/data/rgb/')
 parser.add_argument('--val_depth_path', default='~/data/standord-indoor/area_2/data/rgb/')
 parser.add_argument('--val_label_path', default='~/data/standord-indoor/area_2/data/semantic/')
 parser.add_argument('--pascal_train_file', default='./train.txt')
 parser.add_argument('--pascal_val_file', default='~/val.txt')
-parser.add_argument('--model', default='ResNetDUCHDC',help="select from {ResNetDUCHDC,UNet,Deeplab}")
+parser.add_argument('--model', default='ResNetDUCHDC',help="select from {ResNetDUCHDC,UNet,Deeplab-v2}")
 parser.add_argument('--data', default='SUNRGBD',help="select from {SUNRGBD,Pascal_VOC}")
 parser.add_argument('--batch_size', default='4',type=int)
 parser.add_argument('--image_size', default='512',type=int)
 parser.add_argument('--n_classes', default='13',type=int)
+parser.add_argument('--epochs', default='30',type=int)
 parser.add_argument('--load_prev', default='none',type=str)
 parser.add_argument('--lr', default='0.001',type=float)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--use_depth', action='store_true')
+parser.add_argument('--weak_sup', action='store_true')
 parser.add_argument('--resume', default='',type=str)
 
 opt = parser.parse_args()
 print(opt)
 
-writer = SummaryWriter()
+writer = None
+if opt.log_path == 'None':
+    writer = SummaryWriter()
+else:
+    writer = SummaryWriter(opt.log_path)
 
 
 IGNORE_LABEL = 0
 
 # Hyper params
-num_epochs = 30
+num_epochs = opt.epochs
 batch_size = opt.batch_size
 learning_rate = opt.lr
 
@@ -79,21 +89,18 @@ train_sizes = None #[(reisze_size),(crop_size)]
 val_transform = None
 train_set = None
 val_set = None
-
+sizes = None
 
 # transforms
 if opt.model == 'UNet':
     sizes = [(600,600),(512,512)]
+elif opt.model == "Deeplab-v2":
+    sizes = [(350,350),(321,321)]
 else:
-    sizes = [(280,360),(240,320)]
+    sizes = [(480,560),(420,480)]
 
-if opt.model == 'UNet':
-    val_transform = transforms.Compose([
-            transforms.Resize((512,512)),
-            transforms.ToTensor()])
-else:
-    val_transform = transforms.Compose([
-            transforms.Resize((240,320)),
+val_transform = transforms.Compose([
+            transforms.Resize(sizes[1]),
             transforms.ToTensor()])
 
 interp = nn.Upsample(size=sizes[1], mode='bilinear')
@@ -136,8 +143,24 @@ elif opt.model == "UNet":
         model = Unet(4, n_classes)
     else:
         model = Unet(3,n_classes)
-elif opt.model == "Deeplab":
-    model = Res_Deeplab(num_classes=n_classes)
+elif opt.model == "Deeplab-v2":
+    #model = Res_Deeplab(num_classes=n_classes)
+    model = Res_Deeplab(NoLabels=n_classes)
+    # load pre-trained weights
+    saved_state_dict = torch.load('/home/fangyu/data/pretrained_models/MS_DeepLab_resnet_trained_VOC.pth')
+    #saved_state_dict = torch.load('data/MS_DeepLab_resnet_pretrained_COCO_init.pth')
+    if n_classes!=21:
+        for i in saved_state_dict:
+            #Scale.layer5.conv2d_list.3.weight
+            i_parts = i.split('.')
+            #print (i_parts)
+            #print (model.state_dict([i]))
+            if i_parts[1]=='layer5':
+                saved_state_dict[i] = model.state_dict()[i]
+    model.load_state_dict(saved_state_dict)
+    print ('[pretrained weights loaded!]')
+
+
 
 if(opt.load_prev != 'none'):
     model.load_state_dict(torch.load(opt.load_prev))
@@ -146,7 +169,8 @@ if(use_gpu):
     model.cuda()
 
 #criterion = nn.MSELoss()
-criterion = nn.CrossEntropyLoss(ignore_index=IGNORE_LABEL)
+criterion = FocalLoss2d(ignore_index=IGNORE_LABEL)
+#criterion = nn.CrossEntropyLoss(ignore_index=IGNORE_LABEL)
 #optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate, momentum = 0.9,weight_decay = 0.0005)
 
@@ -156,7 +180,12 @@ def validate(iter_num=None, early_break=False):
     ''' val '''
     #print('Validation: ')
     accs = []
-    IoUs = []
+    valid_label_list = None
+    running_confusion_matrix = None
+    if opt.data == "SUNRGBD" or opt.data == "Pascal_VOC":
+        valid_label_list = [i for i in range(1,opt.n_classes)]
+    if not early_break:
+        running_confusion_matrix = RunningConfusionMatrix(labels=valid_label_list)
     for i,(image, depth, label, img_path) in enumerate(val_loader):
         # stack rgb and depth
         stacked = None
@@ -171,24 +200,33 @@ def validate(iter_num=None, early_break=False):
             stacked = stacked.cuda()
             labels = label.cuda()
         outputs = model(stacked)
-        if opt.model == "Deeplab":
+        if "Deeplab" in opt.model:
             outputs = interp(outputs) 
         #print (outputs)
         #sys.exit(0)
 
+        '''compute metrics'''
         # acc 
         #acc = simple_acc(outputs,labels)# Truth_Positive / NumberOfPixels
-        acc = compute_pixel_acc(outputs,labels,ignore_label=IGNORE_LABEL)
-        #iou = compute_iou(outputs,labels)
+
+        _, prediction = outputs.max(1)
+        prediction = prediction.squeeze(1)
+        prediction_np = to_np(prediction).flatten()
+        annotation_np = to_np(labels).flatten()
+        acc = compute_pixel_acc(prediction_np,annotation_np,ignore_label=IGNORE_LABEL)
+        if not early_break: # only compute mIOU at the end of every epoch
+            running_confusion_matrix.update_matrix(annotation_np, prediction_np)
+
+
+        #miou = compute_iou(outputs,labels,labels=valid_label_list)
         #iou = jaccard_similarity_score(outputs.detach().cpu().numpy(), labels.detach().cpu().numpy())
         #print ('i acc:{:.3f}'.format(100*acc))
         accs.append(float(acc))
-        IoUs.append(0)
 
         # sample some image for visualization
         if i % random.randint(50,150) == 0 and i != 0:
-            print('current sample: {}, pixelAcc so far: {:.3f}% mIoU so far: {:.3f}'.format 
-                    (i, 100*sum(accs)/float(len(accs)),100*sum(IoUs)/float(len(IoUs))))
+            print('current sample: {}, pixelAcc so far: {:.3f}% '.format 
+                    (i, 100*sum(accs)/float(len(accs))))
             # take one sample out for visualization
             d = sunrgbd_drawer()
             k = np.random.randint(int(outputs.shape[0]))
@@ -235,22 +273,25 @@ def validate(iter_num=None, early_break=False):
     #writer.add_image('pred_'+image_name,np/array(im1),global_step=iter_num)
 
     pixel_acc = sum(accs)/float(len(accs))
-    mIoU = None # TODO
     print('Overall pixelAcc - all pics: %.3f%%' % (100*pixel_acc))
+    if not early_break:
+        mIoU = running_confusion_matrix.compute_current_mean_intersection_over_union()
+        print('Overall mIOU - all pics: %.3f%%' % (100*mIoU))
     return pixel_acc, mIoU
 
 print("len(train_loader) :" ,len(train_loader))
 # Train the Model
 for epoch in range(num_epochs):
     #if(debug and counter>=3): break
-    #"""
+    """
     # learning rate decay by 10 times every 10 epochs
     if (epoch+1) % 10 == 0:
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate/10)
-    #"""
+    """
     if opt.debug:
-        validate(-1,True)
-    for i,(image,depth,label) in enumerate(train_loader):
+        validate(-1,False)
+    #for i,(image,depth,label,seeds) in enumerate(train_loader):
+    for i,(image,depth,label,image_ori) in enumerate(train_loader):
         if(debug and counter>=3):break
         counter+=1
         #print(counter)
@@ -270,27 +311,28 @@ for epoch in range(num_epochs):
         # Forward + Backward + Optimize
         optimizer.zero_grad()
         outputs = model(images)
-        if opt.model == "Deeplab":
+        #print (outputs.size())
+        if "Deeplab" in opt.model:
             outputs = interp(outputs) 
+        #print (outputs.size())
         #target = labels.view(-1, )
         #sys.exit(0)
         #print(labels)
 
-
         loss = criterion(outputs, labels)
-        #loss = dice_loss(outputs, labels)
         loss.backward()
         optimizer.step()
 
         #validate(True)
         if (i+1) % 100 == 0:
-            writer.add_scalar('loss',loss.data[0], global_step=epoch*len(train_loader)+i)
+            writer.add_scalar('loss',loss.item(), global_step=epoch*len(train_loader)+i)
             print ('Epoch [%d/%d], Batch [%d/%d] Loss: %.6f'
-                   %(epoch+1, num_epochs,i+1, len(train_loader),loss.data[0]))
+                   %(epoch+1, num_epochs,i+1, len(train_loader),loss.item()))
             _ = validate(i,early_break=True)
     
-    pixel_acc,_ = validate((epoch+1)*len(train_loader),early_break=False)
+    pixel_acc,mIoU = validate((epoch+1)*len(train_loader),early_break=False)
     writer.add_scalar('val_pixel_acc',pixel_acc,global_step=(epoch+1)*len(train_loader))
+    writer.add_scalar('val_mean_IoU',mIoU,global_step=(epoch+1)*len(train_loader))
     # save Model
     if (not debug):
         try:

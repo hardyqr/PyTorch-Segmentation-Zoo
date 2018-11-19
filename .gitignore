@@ -1,0 +1,58 @@
+*.pyc
+*.pickle
+*_diff_.txt
+*.bmp
+*.jpg
+*.jpeg
+*.png
+*.ppm
+*.zip
+*.tar
+*.tar.gz
+*~
+runs/*
+KernelCut/*
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+
+*.mat
+*.caffemodel
+*.solverstate
+*.bin
+*_*.prototxt
+
+*.mexa64
+
+*.DS_Store

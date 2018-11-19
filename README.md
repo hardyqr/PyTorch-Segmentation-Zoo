@@ -1,5 +1,13 @@
-# Unet4RS
+# PyTorch Semantic Segmentation Zoo
 - Currently under construction.
+
+
+## run
+```
+python3 train.py --train_rgb_path ./data/image/train --train_depth_path ./data/depth/train --train_label_path ./data/label37/train --val_rgb_path ./data/image/test --val_depth_path ./data/depth/test --val_label_path ./data/label37/test --batch_size 2 --lr 0.001 --n_classes 38 --model Deeplab-v2 --data SUNRGBD --log_path runs/test --epochs 40
+
+```
+
 
 ##  Requirements
 - PyTorch >= 4.0
@@ -8,7 +16,7 @@
 ##  Supported models
 - U-Net
 - ResNet-DUC-HDC
-- DeepLab (coming)
+- DeepLab-v2
 
 ##  Supported datasets
 - SUN RGB-D
@@ -16,5 +24,4 @@
 
 ## TODO
 - `tensorboardX` for visualizing logs
-- `visdom` for displaying visual results
 - `inference.py`

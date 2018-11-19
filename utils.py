@@ -99,38 +99,104 @@ def dice_loss(input, target):
               (iflat.sum() + tflat.sum() + smooth))
 
 
-
-def compute_iou(y_pred, y_true):
-    # ytrue, ypred is a flatten vector
-    _,y_pred = y_pred.max(1)
-    y_pred = y_pred.flatten()
-    y_true = y_true.flatten()
-    current = confusion_matrix(y_true, y_pred, labels=[0, 1])
-    # compute mean iou
-    intersection = np.diag(current)
-    ground_truth_set = current.sum(axis=1)
-    predicted_set = current.sum(axis=0)
-    union = ground_truth_set + predicted_set - intersection
-    IoU = intersection / union.astype(np.float32)
-    return np.mean(IoU)
-
 def compute_pixel_acc(pred,gt,ignore_label=-1):
     """
     Args:
-        pred - tensor of size (batch_size, n_classes, H, W)
-        gt - tensor of size (batch_size, H, W)
-    """
-    _,pred = pred.max(1)
-    _gt = to_np(gt)
-    _pred = to_np(pred)
+        pred - np.array
+        gt - np.array
+        """
     pixel_acc = None
     if ignore_label != -1:
-        valid_mask = np.ones(_gt.shape).astype(bool)
-        valid_mask[_gt==ignore_label] = False
+        valid_mask = np.ones(gt.shape).astype(bool)
+        valid_mask[gt==ignore_label] = False
         total = valid_mask.sum()
-        correct_pixel = (_pred*valid_mask==_gt*valid_mask).sum()-len(gt.view(-1))+total
+        correct_pixel = (pred*valid_mask==gt*valid_mask).sum()-len(gt)+total
         pixel_acc = correct_pixel / total
     else:
-        pixel_acc = (_pred==_gt).sum()/len(gt.view(-1))
+        pixel_acc = (pred==gt).sum()/len(gt)
     return pixel_acc
 
+
+# reference: https://github.com/warmspringwinds/pytorch-segmentation-detection/blob/c2b787483ed77b800336319a78e44df1d37e5407/pytorch_segmentation_detection/metrics.py
+class RunningConfusionMatrix():
+    """Running Confusion Matrix class that enables computation of confusion matrix
+    on the go and has methods to compute such accuracy metrics as Mean Intersection over
+    Union MIOU.
+    
+    Attributes
+    ----------
+    labels : list[int]
+        List that contains int values that represent classes.
+    overall_confusion_matrix : sklean.confusion_matrix object
+        Container of the sum of all confusion matrices. Used to compute MIOU at the end.
+    ignore_label : int
+        A label representing parts that should be ignored during
+        computation of metrics
+        
+    """
+    
+    def __init__(self, labels, ignore_label=255):
+        
+        self.labels = labels
+        self.ignore_label = ignore_label
+        self.overall_confusion_matrix = None
+        
+    def update_matrix(self, ground_truth, prediction):
+        """Updates overall confusion matrix statistics.
+        If you are working with 2D data, just .flatten() it before running this
+        function.
+        Parameters
+        ----------
+        groundtruth : array, shape = [n_samples]
+            An array with groundtruth values
+        prediction : array, shape = [n_samples]
+            An array with predictions
+        """
+        
+        # Mask-out value is ignored by default in the sklearn
+        # read sources to see how that was handled
+        # But sometimes all the elements in the groundtruth can
+        # be equal to ignore value which will cause the crush
+        # of scikit_learn.confusion_matrix(), this is why we check it here
+        if (ground_truth == self.ignore_label).all():
+            
+            return
+        
+        current_confusion_matrix = confusion_matrix(y_true=ground_truth,
+                                                    y_pred=prediction,
+                                                    labels=self.labels)
+        
+        if self.overall_confusion_matrix is not None:
+            
+            self.overall_confusion_matrix += current_confusion_matrix
+        else:
+            
+            self.overall_confusion_matrix = current_confusion_matrix
+    
+    def compute_current_mean_intersection_over_union(self):
+        
+        intersection = np.diag(self.overall_confusion_matrix)
+        ground_truth_set = self.overall_confusion_matrix.sum(axis=1)
+        predicted_set = self.overall_confusion_matrix.sum(axis=0)
+        union =  ground_truth_set + predicted_set - intersection
+
+        intersection_over_union = intersection / union.astype(np.float32)
+        mean_intersection_over_union = np.mean(intersection_over_union)
+        
+        return mean_intersection_over_union
+
+
+
+def spy_sparse2torch_sparse(data):
+    """
+    https://discuss.pytorch.org/t/better-way-to-forward-sparse-matrix/21915/2
+    :param data: a scipy sparse csr matrix
+    :return: a sparse torch tensor
+    """
+    samples=data.shape[0]
+    features=data.shape[1]
+    values=data.data
+    coo_data=data.tocoo()
+    indices=torch.LongTensor([coo_data.row,coo_data.col])
+    t=torch.sparse.FloatTensor(indices,torch.from_numpy(values).float(),[samples,features])
+    return t
