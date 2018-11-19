@@ -8,11 +8,11 @@ from torch.autograd import Variable
 
 class FocalLoss2d(nn.Module):
 
-    def __init__(self, gamma=0, weight=None, size_average=True, ignore_index=0):
+    def __init__(self, gamma=0, weight=1, size_average=True, ignore_index=0):
         super(FocalLoss2d, self).__init__()
 
-        self.gamma = gamma
-        self.weight = weight
+        self.gamma = torch.tensor(gamma).cuda()
+        self.weight = torch.tensor(weight).cuda()
         self.size_average = size_average
         self.ignore_index = ignore_index
 
@@ -31,12 +31,12 @@ class FocalLoss2d(nn.Module):
             target = target.view(-1, 1)
 
         # compute the negative likelyhood
-        weight = Variable(self.weight)
+        weight = self.weight
         logpt = -F.cross_entropy(input, target, ignore_index=self.ignore_index)
         pt = torch.exp(logpt)
 
         # compute the loss
-        loss = -((1-pt)**self.gamma) * logpt
+        loss = -weight*((1-pt)**self.gamma) * logpt
 
         # averaging (or not) loss
         if self.size_average:

@@ -25,6 +25,7 @@ from utils import *
 from models.unet import *
 from models.duc_hdc import ResNetDUC, ResNetDUCHDC
 from loss.focalloss2d import FocalLoss2d 
+from loss.focal_loss import FocalLossSigmoid
 from KernelCut.kernelcut import *
 #from models.deeplab_resnet import Res_Deeplab
 from models.deeplab_resnet_2 import Res_Deeplab
@@ -169,7 +170,8 @@ if(use_gpu):
     model.cuda()
 
 #criterion = nn.MSELoss()
-criterion = FocalLoss2d(ignore_index=IGNORE_LABEL)
+#criterion = FocalLoss2d(gamma=1.0,weight=0.5,ignore_index=IGNORE_LABEL)
+criterion = FocalLossSigmoid()
 #criterion = nn.CrossEntropyLoss(ignore_index=IGNORE_LABEL)
 #optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate, momentum = 0.9,weight_decay = 0.0005)
@@ -224,7 +226,8 @@ def validate(iter_num=None, early_break=False):
         accs.append(float(acc))
 
         # sample some image for visualization
-        if i % random.randint(50,150) == 0 and i != 0:
+        #if i % random.randint(50,150) == 0 and i != 0:
+        if (i+1) % 100  ==0:
             print('current sample: {}, pixelAcc so far: {:.3f}% '.format 
                     (i, 100*sum(accs)/float(len(accs))))
             # take one sample out for visualization
@@ -318,8 +321,9 @@ for epoch in range(num_epochs):
         #target = labels.view(-1, )
         #sys.exit(0)
         #print(labels)
-
-        loss = criterion(outputs, labels)
+        
+        mask = torch.tensor(labels != IGNORE_LABEL).float().cuda()
+        loss = criterion(outputs.permute(0,2,3,1), labels, n=mask.sum(), masks_enable=mask)
         loss.backward()
         optimizer.step()
 
