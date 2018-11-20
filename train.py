@@ -6,6 +6,7 @@ import torch.nn as nn
 import torchvision.datasets as dsets
 import torchvision.transforms as transforms
 from torch.autograd import Variable
+from torch.utils.serialization import load_lua
 
 from PIL import Image
 import numpy as np
@@ -29,6 +30,7 @@ from loss.focal_loss import FocalLossSigmoid
 from KernelCut.kernelcut import *
 #from models.deeplab_resnet import Res_Deeplab
 from models.deeplab_resnet_2 import Res_Deeplab
+from models.deeplab_large_fov import deeplab_largeFOV
 from dataloaders.sunrgbd_data_loader import SUN_RGBD_dataset_train,SUN_RGBD_dataset_val, sunrgbd_drawer
 from dataloaders.pascal_voc_data_loader import pascal_voc_dataset_train, pascal_voc_dataset_val
 
@@ -95,8 +97,8 @@ sizes = None
 # transforms
 if opt.model == 'UNet':
     sizes = [(600,600),(512,512)]
-elif opt.model == "Deeplab-v2":
-    sizes = [(350,350),(321,321)]
+elif "Deeplab" in opt.model:
+    sizes = [(360,360),(321,321)]
 else:
     sizes = [(480,560),(420,480)]
 
@@ -160,7 +162,28 @@ elif opt.model == "Deeplab-v2":
                 saved_state_dict[i] = model.state_dict()[i]
     model.load_state_dict(saved_state_dict)
     print ('[pretrained weights loaded!]')
-
+elif opt.model == "Deeplab-LargeFOV":
+    #model = Res_Deeplab(num_classes=n_classes)
+    model = deeplab_largeFOV(n_labels=n_classes)
+    saved_state_dict = load_lua('/home/fangyu/models/Deeplab_LargeFOV_vgg16_torch.t7')
+    dict_list = []
+    for m in saved_state_dict.modules:
+        try: dict_list.append(m.weight)
+        except: continue
+    count = 0
+    state = model.state_dict()
+    for name, param in model.state_dict().items():
+        count +=1
+        if count == len(dict_list):
+            # last fc layer, skipped
+            continue
+        loaded_weight = dict_list[count-1]
+        # check if match
+        if param.size() != loaded_weight.size():
+            print ('[pre-trained weights mismatch. model param: {} loaded param: {}]'.format(param.size(), loaded_weight.size()))
+            break
+        state[name] = loaded_weight
+        print ('[{} {} {} loaded]'.format(count, name, param.size()))
 
 
 if(opt.load_prev != 'none'):
@@ -171,10 +194,10 @@ if(use_gpu):
 
 #criterion = nn.MSELoss()
 #criterion = FocalLoss2d(gamma=1.0,weight=0.5,ignore_index=IGNORE_LABEL)
-criterion = FocalLossSigmoid()
-#criterion = nn.CrossEntropyLoss(ignore_index=IGNORE_LABEL)
-#optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate, momentum = 0.9,weight_decay = 0.0005)
+#criterion = FocalLossSigmoid()
+criterion = nn.CrossEntropyLoss(ignore_index=IGNORE_LABEL)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+#optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate, momentum = 0.9,weight_decay = 0.0005)
 
 counter = 0
 
@@ -227,9 +250,9 @@ def validate(iter_num=None, early_break=False):
 
         # sample some image for visualization
         #if i % random.randint(50,150) == 0 and i != 0:
-        if (i+1) % 100  ==0:
+        if (i+1) % 20  == 0:
             print('current sample: {}, pixelAcc so far: {:.3f}% '.format 
-                    (i, 100*sum(accs)/float(len(accs))))
+                    (i+1, 100*sum(accs)/float(len(accs))))
             # take one sample out for visualization
             d = sunrgbd_drawer()
             k = np.random.randint(int(outputs.shape[0]))
@@ -314,6 +337,8 @@ for epoch in range(num_epochs):
         # Forward + Backward + Optimize
         optimizer.zero_grad()
         outputs = model(images)
+        
+        #print (images.size())
         #print (outputs.size())
         if "Deeplab" in opt.model:
             outputs = interp(outputs) 
@@ -322,8 +347,9 @@ for epoch in range(num_epochs):
         #sys.exit(0)
         #print(labels)
         
-        mask = torch.tensor(labels != IGNORE_LABEL).float().cuda()
-        loss = criterion(outputs.permute(0,2,3,1), labels, n=mask.sum(), masks_enable=mask)
+        #mask = torch.tensor(labels != IGNORE_LABEL).float().cuda()
+        #loss = criterion(outputs.permute(0,2,3,1), labels, n=mask.sum(), masks_enable=mask) # for FocalLoss
+        loss = criterion(outputs,labels)
         loss.backward()
         optimizer.step()
 
@@ -334,18 +360,19 @@ for epoch in range(num_epochs):
                    %(epoch+1, num_epochs,i+1, len(train_loader),loss.item()))
             _ = validate(i,early_break=True)
     
-    pixel_acc,mIoU = validate((epoch+1)*len(train_loader),early_break=False)
-    writer.add_scalar('val_pixel_acc',pixel_acc,global_step=(epoch+1)*len(train_loader))
-    writer.add_scalar('val_mean_IoU',mIoU,global_step=(epoch+1)*len(train_loader))
-    # save Model
-    if (not debug):
-        try:
-            name = opt.model+'_epoch_'+str(epoch+1)+'_model.pkl'
-            if opt.use_depth:
-                name = opt.model+'_epoch_'+str(epoch+1)+'_use_depth_model.pkl'
-            torch.save(model.state_dict(),os.path.join('/home/fangyu/models/',name))
-        except:
-            print ('save failed.')
+    if (epoch+1)%5 == 0:
+        pixel_acc,mIoU = validate((epoch+1)*len(train_loader),early_break=False)
+        writer.add_scalar('val_pixel_acc',pixel_acc,global_step=(epoch+1)*len(train_loader))
+        writer.add_scalar('val_mean_IoU',mIoU,global_step=(epoch+1)*len(train_loader))
+        # save Model
+        if (not debug):
+            try:
+                name = opt.model+'_epoch_'+str(epoch+1)+'_model.pkl'
+                if opt.use_depth:
+                    name = opt.model+'_epoch_'+str(epoch+1)+'_use_depth_model.pkl'
+                torch.save(model.state_dict(),os.path.join('/home/fangyu/models/',name))
+            except:
+                print ('save failed.')
 
 # save some logs
 """
