@@ -25,7 +25,7 @@ python3 train.py --train_rgb_path ./data/image/train \
 - tensorboardX
 
 ##  Supported models
-(Most models are referenced from open source projects. Please check top of[model].py for source(s).)
+(Most models are referenced from open source projects. Please check top of [model].py for source(s).)
 - U-Net
 - ResNet-DUC-HDC
 - DeepLab-v2 (ResNet)
