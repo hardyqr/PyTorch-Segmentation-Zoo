@@ -10,8 +10,10 @@ python3 train.py --train_rgb_path ./data/image/train \
                  --val_rgb_path ./data/image/test \
                  --val_depth_path ./data/depth/test \
                  --val_label_path ./data/label37/test \
-                 --batch_size 2 --lr 0.001 \
-                 --n_classes 38 --model Deeplab-v2 \
+                 --batch_size 2 \
+                 --lr 0.001 \
+                 --n_classes 38 \
+                 --model Deeplab-v2 \
                  --data SUNRGBD \
                  --log_path runs/test \
                  --epochs 30
